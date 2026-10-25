@@ -1,0 +1,7 @@
+/config.js
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
