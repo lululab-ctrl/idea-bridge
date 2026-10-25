@@ -55,6 +55,7 @@ export function connect(url = config.dbUrl): DB {
   shared ??= postgres(url, {
     max: 4,
     prepare: false, // works with Supabase's connection pooler
+    fetch_types: false, // skips a lookup on every new connection; no custom types are used
     idle_timeout: 20,
     onnotice: () => {},
   });

@@ -25,7 +25,9 @@ const vendor = {
 mkdirSync(join(out, "vendor"), { recursive: true });
 for (const [name, src] of Object.entries(vendor)) cpSync(join(root, "node_modules", src), join(out, "vendor", name));
 
-writeFileSync(join(out, "config.js"), `window.IDEA_BRIDGE_API = ${JSON.stringify(api)};\n`);
+// The server runs in the same region as the database (much faster).
+const region = process.env.IDEA_BRIDGE_REGION ?? "";
+writeFileSync(join(out, "config.js"), `window.IDEA_BRIDGE_API = ${JSON.stringify(api)};\nwindow.IDEA_BRIDGE_REGION = ${JSON.stringify(region)};\n`);
 // Cloudflare Pages: never cache the config or the service worker, so updates arrive at once.
 writeFileSync(
   join(out, "_headers"),

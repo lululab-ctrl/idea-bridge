@@ -10,6 +10,14 @@ export { render };
 // ------------------------------------------------------------------ API
 // The API runs on Supabase; its address comes from /config.js (written at build).
 export const API_BASE = (window.IDEA_BRIDGE_API ?? "").replace(/\/$/, "");
+const REGION = window.IDEA_BRIDGE_REGION ?? "";
+
+// Full address of an API call. The server is asked to run in the database's
+// region, which makes every request much faster.
+export function apiUrl(path) {
+  if (!REGION) return API_BASE + path;
+  return `${API_BASE}${path}${path.includes("?") ? "&" : "?"}forceFunctionRegion=${encodeURIComponent(REGION)}`;
+}
 const TOKEN_KEY = "ib_token";
 
 // The sign-in token lives on the device, so the app stays signed in across
@@ -97,7 +105,7 @@ export async function api(method, url, body) {
   }
   let res;
   try {
-    res = await fetch(API_BASE + url, opts);
+    res = await fetch(apiUrl(url), opts);
   } catch {
     throw new ApiError(0, "You seem to be offline. Check your connection and try again.");
   }
@@ -116,7 +124,7 @@ export async function api(method, url, body) {
 export async function download(url, filename) {
   let res;
   try {
-    res = await fetch(API_BASE + url, { headers: authHeaders() });
+    res = await fetch(apiUrl(url), { headers: authHeaders() });
   } catch {
     throw new ApiError(0, "You seem to be offline.");
   }

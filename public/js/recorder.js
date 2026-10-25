@@ -1,4 +1,4 @@
-import { API_BASE, authHeaders } from "./lib.js";
+import { apiUrl, authHeaders } from "./lib.js";
 
 // Voice recording that never loses an idea:
 //  1. audio is recorded in small chunks,
@@ -174,7 +174,7 @@ export async function saveText(text, questionId) {
 async function call(method, path, body) {
   let res;
   try {
-    res = await fetch(API_BASE + path, {
+    res = await fetch(apiUrl(path), {
       method,
       headers: { ...authHeaders(), "content-type": "application/json" },
       body: JSON.stringify(body ?? {}),

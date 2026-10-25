@@ -150,14 +150,21 @@ async function restore(file: string) {
   console.log(`Restored ${order.length} tables from ${file}.`);
 }
 
+// The region the database runs in (e.g. "eu-central-1").
+async function region() {
+  const project = (await management("GET", "")) as { region?: string };
+  console.log(project.region ?? "");
+}
+
 const [cmd, ...args] = Deno.args;
 try {
   if (cmd === "migrate") await migrate();
   else if (cmd === "secrets") await secrets(args);
   else if (cmd === "backup") await backup(args[0] ?? "idea-bridge-backup.json");
   else if (cmd === "restore") await restore(args[0]);
+  else if (cmd === "region") await region();
   else {
-    console.error("Usage: ops.ts migrate | secrets NAME=value… | backup FILE | restore FILE");
+    console.error("Usage: ops.ts migrate | secrets NAME=value… | backup FILE | restore FILE | region");
     Deno.exit(2);
   }
   Deno.exit(0);

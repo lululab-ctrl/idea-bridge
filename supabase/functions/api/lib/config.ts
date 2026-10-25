@@ -22,6 +22,8 @@ export const config = {
   // Shared secret the once-a-minute scheduler uses to wake the worker.
   workerSecret: str("WORKER_SECRET"),
   timezone: str("TZ_DEFAULT", "Asia/Jerusalem"),
+  // The database's region; the scheduler asks for the worker to run there.
+  functionRegion: str("FUNCTION_REGION"),
 
   // "live" uses real providers; "mock" uses deterministic fakes (tests only).
   aiMode: str("AI_MODE", "live") as "live" | "mock",

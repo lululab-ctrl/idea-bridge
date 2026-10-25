@@ -5,7 +5,7 @@ import { AIError } from "./lib/ai/llm.ts";
 import { type App, createApp } from "./lib/app.ts";
 import { userFromRequest } from "./lib/auth.ts";
 import { config } from "./lib/config.ts";
-import { connect, type DB, nowText, setSetting } from "./lib/db.ts";
+import { connect, type DB, getSetting, nowText, setSetting } from "./lib/db.ts";
 import { type Ctx, HttpError, isAdmin, json, Router } from "./lib/http.ts";
 import { coreRoutes } from "./lib/routes/core.ts";
 import { ideaRoutes } from "./lib/routes/ideas.ts";
@@ -63,11 +63,19 @@ function kick(app: App) {
   );
 }
 
-async function registerWorker(db: DB) {
+// Tells the scheduler where to find the worker. Done once per server instance,
+// in the background, and only writes when something changed.
+function registerWorker(db: DB) {
   if (workerRegistered || config.storageMode === "local") return;
   workerRegistered = true;
-  await setSetting(db, "worker_url", `${config.supabaseUrl}/functions/v1/api/_worker`);
-  await setSetting(db, "worker_secret", await workerSecret(db));
+  background(
+    (async () => {
+      const region = config.functionRegion ? `?forceFunctionRegion=${encodeURIComponent(config.functionRegion)}` : "";
+      const url = `${config.supabaseUrl}/functions/v1/api/_worker${region}`;
+      if ((await getSetting<string | null>(db, "worker_url", null)) !== url) await setSetting(db, "worker_url", url);
+      await workerSecret(db);
+    })(),
+  );
 }
 
 // APP_URL may include a path (e.g. GitHub Pages); browsers send only the origin.
@@ -123,8 +131,7 @@ export async function handle(req: Request): Promise<Response> {
 
   try {
     mark("init");
-    await registerWorker(db);
-    mark("register");
+    registerWorker(db);
 
     if (path === "/api/_worker" && req.method === "POST") {
       if (req.headers.get("x-worker-secret") !== (await workerSecret(db))) throw new HttpError(403, "Forbidden.");
