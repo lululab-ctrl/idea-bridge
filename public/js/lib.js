@@ -12,20 +12,69 @@ export { render };
 export const API_BASE = (window.IDEA_BRIDGE_API ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "ib_token";
 
-export function getToken() {
+// The sign-in token lives on the device, so the app stays signed in across
+// visits and restarts until the person signs out or the session is revoked.
+// If storage is blocked (private browsing), it is kept for this visit only.
+let memoryToken = null;
+const ADMIN_KEY = "ib_admin_token";
+
+function stored(key) {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
-export function setToken(token) {
+function store(key, value) {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
   } catch {
-    /* private mode: stays signed in for this visit only */
+    /* storage blocked */
   }
+}
+
+export function getToken() {
+  return stored(TOKEN_KEY) ?? memoryToken;
+}
+export function setToken(token) {
+  memoryToken = token;
+  store(TOKEN_KEY, token);
+  // Ask the browser not to clear the app's storage when space runs low.
+  if (token) navigator.storage?.persist?.().catch(() => {});
+}
+
+// Previewing the other person's view: the admin's own token is set aside and
+// put back when the preview ends (or expires).
+export function startPreview(token) {
+  store(ADMIN_KEY, getToken());
+  setToken(token);
+  location.hash = "#/capture";
+  location.reload();
+}
+export async function endPreview() {
+  await post("/api/logout").catch(() => {});
+  const admin = stored(ADMIN_KEY);
+  store(ADMIN_KEY, null);
+  setToken(admin);
+  location.hash = "#/settings";
+  location.reload();
+}
+// Signing out on this device. During a preview this just ends the preview.
+export async function signOut() {
+  if (stored(ADMIN_KEY)) return endPreview();
+  await post("/api/logout").catch(() => {});
+  setToken(null);
+  location.hash = "";
+  location.reload();
+}
+
+function previewExpired() {
+  const admin = stored(ADMIN_KEY);
+  if (!admin) return false;
+  store(ADMIN_KEY, null);
+  setToken(admin);
+  return true;
 }
 
 export function authHeaders() {
@@ -55,7 +104,7 @@ export async function api(method, url, body) {
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
   if (!res.ok) {
     if (res.status === 401 && !url.includes("/api/login")) {
-      setToken(null);
+      if (!previewExpired()) setToken(null);
       window.dispatchEvent(new Event("ib:signedout"));
     }
     throw new ApiError(res.status, data?.error || `Request failed (${res.status}).`);

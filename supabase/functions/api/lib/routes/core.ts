@@ -127,8 +127,35 @@ export function coreRoutes(r: Router, app: App) {
   });
 
   r.get("/api/users", (c) =>
-    c.db.all("SELECT id, name, email, role, home, created_at, password_hash IS NOT NULL AS has_password FROM users ORDER BY id"),
+    c.db.all(
+      `SELECT u.id, u.name, u.email, u.role, u.home, u.created_at, u.password_hash IS NOT NULL AS has_password,
+         (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id = u.id AND s.impersonator_id IS NULL AND s.expires_at > now_text()) AS devices,
+         (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id AND s.impersonator_id IS NULL) AS last_seen_at
+       FROM users u ORDER BY u.id`,
+    ),
   );
+
+  // Signs a person out everywhere (e.g. a lost phone). The admin's own current
+  // session is kept.
+  r.delete("/api/users/:id/sessions", async (c) => {
+    const me = requireUser(c);
+    const id = idParam(c);
+    const mine = sha(bearer(c.req) ?? "");
+    await c.db.run("DELETE FROM sessions WHERE user_id = ? AND id != ?", id, mine);
+    await logActivity(c.db, me.id, "sessions_revoked", "user", id);
+    return { ok: true };
+  });
+
+  // The admin opens the app exactly as the idea contributor sees it, read-only.
+  r.post("/api/users/:id/view-as", async (c) => {
+    const me = requireUser(c);
+    const id = idParam(c);
+    const target = await c.db.get<{ role: string }>("SELECT role FROM users WHERE id = ?", id);
+    if (!target) throw new HttpError(404, "Person not found.");
+    if (target.role !== "visionary") throw new HttpError(400, "Only the idea contributor's view can be previewed.");
+    await logActivity(c.db, me.id, "view_as", "user", id);
+    return { token: await createSession(c.db, id, "preview", { impersonatorId: me.id }) };
+  });
 
   r.patch("/api/users/:id", async (c) => {
     const me = requireUser(c);

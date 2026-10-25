@@ -54,7 +54,12 @@ export function Capture({ me }) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // While the admin previews this view, nothing is recorded or saved.
+  const preview = !!me.viewed_by;
+  const previewOnly = () => setFlash(`Preview: this is exactly what ${me.name} sees. Recording and saving are turned off.`);
+
   async function start(question = answering) {
+    if (preview) return previewOnly();
     if (state !== "idle") return;
     setState("starting");
     setFlash("");
@@ -108,6 +113,7 @@ export function Capture({ me }) {
   }
 
   async function submitText() {
+    if (preview) return previewOnly();
     if (text.trim().length < 3) return;
     await saveText(text.trim(), answering?.id);
     setText("");
@@ -123,6 +129,10 @@ export function Capture({ me }) {
   async function uploadFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (preview) {
+      e.target.value = "";
+      return previewOnly();
+    }
     await saveRecording({ blob: file, mime: file.type || "audio/mp4", duration: 0, capturedAt: new Date().toISOString() }, answering?.id);
     setFlash("Uploaded. The AI is on it.");
     e.target.value = "";

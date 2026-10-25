@@ -20,6 +20,10 @@ Nothing is ever lost. Original recordings are kept, every idea keeps its full ve
 | Projects, plans, tasks, documents, Ask, Insights | ✓ | – |
 | Settings, people, passwords, AI teaching, exports, trash | ✓ | – |
 
+**See what he sees:** Settings → People → *View as Matan* opens his exact app in a look-only preview (nothing can be recorded, changed or deleted there; it ends after 2 hours or with *Back to my view*).
+
+**Staying signed in:** after signing in once, each device stays signed in, across app restarts, for as long as the app is used at least once a year. It ends only when someone signs out, a password is changed, or you tap *Sign out everywhere* next to a person in Settings → People (e.g. for a lost phone). On iPhone, use the app from the home screen: Safari itself may clear the sign-in of websites not opened for 7 days, home-screen apps are exempt.
+
 The limits are enforced by the server, not just hidden in the interface. Every request from the contributor's account is checked against a short allowlist, and he can only ever see or delete his own recordings.
 
 ## Deleting and restoring

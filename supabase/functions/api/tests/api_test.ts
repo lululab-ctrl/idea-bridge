@@ -303,6 +303,55 @@ Deno.test({
       await call("PUT", "/api/settings", { ai_budget_usd: 18 });
     });
 
+    await t.step("admin can preview the contributor's view, look only", async () => {
+      const users = await call<any[]>("GET", "/api/users");
+      const matan = users.find((u) => u.role === "visionary");
+      const lulu = users.find((u) => u.role === "organizer");
+      // (An earlier step reset his password, which signed him out.)
+      const link = await call("POST", `/api/users/${matan.id}/login-link`);
+      him = (await call("POST", "/api/signin-link", { token: link.url.split("/signin/")[1] }, "")).token;
+      await call("POST", `/api/users/${lulu.id}/view-as`, {}, admin, 400);
+      await call("POST", `/api/users/${matan.id}/view-as`, {}, him, 403);
+      const { token: view } = await call("POST", `/api/users/${matan.id}/view-as`);
+      const state = await call("GET", "/api/state", undefined, view);
+      assertEquals(state.user.name, "Matan");
+      assertEquals(state.user.viewed_by.name, "Lulu");
+      // Same information he sees...
+      assertEquals(
+        JSON.stringify(await call("GET", "/api/my/ideas", undefined, view)),
+        JSON.stringify(await call("GET", "/api/my/ideas", undefined, him)),
+      );
+      // ...the same limits, and nothing can be changed.
+      await call("GET", "/api/ideas", undefined, view, 403);
+      await call("POST", "/api/recordings/text", { text: "should not be saved", client_id: "preview-1" }, view, 403);
+      const mine = await call<any[]>("GET", "/api/recordings", undefined, him);
+      if (mine[0]) await call("DELETE", `/api/recordings/${mine[0].id}`, undefined, view, 403);
+      await call("POST", "/api/logout", {}, view);
+      assertEquals((await call("GET", "/api/state", undefined, view)).user, null);
+      // Preview sessions don't count as his devices.
+      assert((await call<any[]>("GET", "/api/users")).find((u) => u.role === "visionary").devices >= 1);
+    });
+
+    await t.step("sessions stay alive with use and can be revoked", async () => {
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(him))))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      // A session that was about to expire and hasn't been used for 2 hours...
+      const sql = async (q: string) =>
+        new TextDecoder().decode((await new Deno.Command("psql", { args: [`${PG}/${DBNAME}`, "-v", "ON_ERROR_STOP=1", "-tAc", q], stdout: "piped" }).output()).stdout).trim();
+      await sql(`UPDATE sessions SET expires_at = ago_text(-60), last_seen_at = ago_text(7200) WHERE id = '${hash}'`);
+      await call("GET", "/api/my/ideas", undefined, him);
+      // ...is pushed a full year ahead by using the app.
+      assertEquals(await sql(`SELECT expires_at > ago_text(-300 * 86400) FROM sessions WHERE id = '${hash}'`), "t");
+      // Signing him out everywhere ends it; the admin stays signed in.
+      const matan = (await call<any[]>("GET", "/api/users")).find((u) => u.role === "visionary");
+      await call("DELETE", `/api/users/${matan.id}/sessions`);
+      await call("GET", "/api/my/ideas", undefined, him, 401);
+      await call("GET", "/api/ideas");
+      await call("DELETE", `/api/users/${matan.id}/sessions`, undefined, him, 401);
+      const link = await call("POST", `/api/users/${matan.id}/login-link`);
+      him = (await call("POST", "/api/signin-link", { token: link.url.split("/signin/")[1] }, "")).token;
+    });
+
     await t.step("AI keys are saved by the admin, never shown or exported", async () => {
       let k = await call("PUT", "/api/keys/groq", { value: "gsk_secret_value_9876" });
       assertEquals(k.groq, { set: true, source: "settings", hint: "…9876" });

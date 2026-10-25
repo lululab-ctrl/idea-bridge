@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { AudioDock, get, getToken, go, html, icon, parseHash, render, setToken, useData, useRoute } from "./lib.js";
+import { AudioDock, get, endPreview, getToken, go, html, icon, parseHash, render, setToken, useData, useRoute } from "./lib.js";
 import { Capture } from "./views/capture.js";
 import { Login, SignInLink, Setup } from "./views/auth.js";
 import { Dashboard } from "./views/dashboard.js";
@@ -72,6 +72,13 @@ function More() {
 
 // The idea contributor only gets the record screen and a read-only view of his
 // own ideas and recordings. The server enforces the same limits.
+function PreviewBar({ me }) {
+  return html`<div class="preview-bar" role="status">
+    <span class="grow">${icon("search")} Viewing as <b>${me.name}</b> · look only</span>
+    <button class="btn small" onClick=${endPreview}>Back to my view</button>
+  </div>`;
+}
+
 function ContributorRouter({ me }) {
   const route = useRoute();
   const [a, b, c] = route.parts;
@@ -80,7 +87,7 @@ function ContributorRouter({ me }) {
   else if (a === "mine" && b === "recordings" && c) view = html`<${MyRecording} id=${Number(c)} key=${c} />`;
   else if (a === "mine") view = html`<${Mine} tab=${b === "recordings" ? "recordings" : "ideas"} />`;
   else view = html`<${Capture} me=${me} />`;
-  return html`${view}<${AudioDock} />`;
+  return html`${me.viewed_by && html`<${PreviewBar} me=${me} />`}${view}<${AudioDock} />`;
 }
 
 function Router({ me }) {

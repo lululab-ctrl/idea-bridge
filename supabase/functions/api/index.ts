@@ -140,6 +140,10 @@ export async function handle(req: Request): Promise<Response> {
       if (!user) throw new HttpError(401, "Please sign in.");
       // Everything is admin-only unless the route is open to the idea contributor.
       if (!isAdmin(user) && !m.route.opts.contributor) throw new HttpError(403, "This part of the app is managed by the admin.");
+      // Previewing as the other person is look-only: nothing can be changed.
+      if (user.viewed_by && req.method !== "GET" && path !== "/api/logout") {
+        throw new HttpError(403, `You're previewing ${user.name}'s view, so nothing can be changed here. Go back to your own view to make changes.`);
+      }
     }
     let parsed: unknown;
     const ctx: Ctx = {

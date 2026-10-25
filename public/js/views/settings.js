@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { act, ago, api, del, download, ErrorBox, get, html, icon, Loading, Modal, patch, post, put, toast, useData, useRoute, when, setToken } from "../lib.js";
+import { act, ago, api, del, download, ErrorBox, get, html, icon, Loading, Modal, patch, post, put, startPreview, toast, useData, useRoute, when, setToken, signOut } from "../lib.js";
 import { enablePush, isStandalone, pushSupported } from "../push.js";
 
 export function Settings({ me }) {
@@ -28,7 +28,7 @@ export function Settings({ me }) {
     <${System} />
     <div class="card row between">
       <span class="small muted">Signed in as ${me.name}</span>
-      <button class="btn" onClick=${async () => { await post("/api/logout").catch(() => {}); setToken(null); location.hash = ""; location.reload(); }}>Sign out</button>
+      <button class="btn" onClick=${signOut}>Sign out</button>
     </div>
   </div>`;
 }
@@ -39,12 +39,12 @@ function People({ me, users }) {
   if (!users.data) return html`<${Loading} />`;
   return html`<div class="card stack">
     <h2>People</h2>
-    ${users.data.map((u) => html`<${Person} u=${u} me=${me} key=${u.id} onLink=${async () => setLink({ u, ...(await post(`/api/users/${u.id}/login-link`)) })} onPw=${() => setPw(u)} />`)}
+    ${users.data.map((u) => html`<${Person} u=${u} me=${me} key=${u.id} reload=${users.reload} onLink=${async () => setLink({ u, ...(await post(`/api/users/${u.id}/login-link`)) })} onPw=${() => setPw(u)} />`)}
     ${link && html`<${Modal} title=${`Sign ${link.u.name} in on a phone`} onClose=${() => setLink(null)}>
       <ol class="small stack tight" style="margin:0;padding-left:1.3em">
-        <li>On ${link.u.name}'s phone, open the camera and scan this code (or send the link below).</li>
-        <li>The app opens, already signed in, straight to the record button.</li>
-        <li>Tap <b>Share → Add to Home Screen</b> (iPhone, in Safari) or <b>⋮ → Install app</b> (Android). Now it opens like an app.</li>
+        <li><b>Android:</b> scan this code with the phone's camera, tap <b>Continue</b>, then <b>⋮ → Add to Home screen</b>.</li>
+        <li><b>iPhone:</b> an app on the home screen doesn't keep a sign-in made in Safari. Add the app to the home screen first (Safari → <b>Share → Add to Home Screen</b>), open it from there and sign in with ${link.u.name}'s name and password.</li>
+        <li>After signing in once, ${link.u.name} stays signed in until he signs out or you sign him out here.</li>
       </ol>
       <div class="qr" dangerouslySetInnerHTML=${{ __html: link.qr }} style="align-self:center"></div>
       <div class="code">${link.url}</div>
@@ -54,7 +54,16 @@ function People({ me, users }) {
   </div>`;
 }
 
-function Person({ u, me, onLink, onPw }) {
+function Person({ u, me, onLink, onPw, reload }) {
+  const viewAs = async () => {
+    const r = await act(() => post(`/api/users/${u.id}/view-as`));
+    if (r?.token) startPreview(r.token);
+  };
+  const signOutAll = async () => {
+    const who = u.id === me.id ? "your other devices" : `all of ${u.name}'s devices`;
+    if (!confirm(`Sign out ${who}? ${u.id === me.id ? "This device stays signed in." : `${u.name} will need to sign in again.`}`)) return;
+    if (await act(() => del(`/api/users/${u.id}/sessions`), "Signed out")) reload?.();
+  };
   const [name, setName] = useState(u.name);
   const [email, setEmail] = useState(u.email ?? "");
   const dirty = name !== u.name || email !== (u.email ?? "");
@@ -70,6 +79,11 @@ function Person({ u, me, onLink, onPw }) {
       ${dirty && html`<button class="btn primary small" onClick=${() => act(() => patch(`/api/users/${u.id}`, { name, email }), "Saved")}>Save</button>`}
       <button class="btn small" onClick=${onLink}>${icon("link")} Sign-in link for a phone</button>
       <button class="btn small" onClick=${onPw}>${u.id === me.id ? "Change your password" : u.has_password ? `Reset ${u.name}'s password` : `Set a password for ${u.name}`}</button>
+      ${u.role === "visionary" && html`<button class="btn small" onClick=${viewAs}>${icon("search")} View as ${u.name}</button>`}
+    </div>
+    <div class="row tiny muted">
+      <span class="grow">${u.devices ? `Signed in on ${u.devices} device${u.devices > 1 ? "s" : ""}${u.last_seen_at ? ` · last active ${ago(u.last_seen_at)}` : ""}` : "Not signed in on any device"}</span>
+      ${(u.id === me.id ? u.devices > 1 : u.devices > 0) && html`<button class="btn small" onClick=${signOutAll}>${u.id === me.id ? "Sign out other devices" : "Sign out everywhere"}</button>`}
     </div>
   </div>`;
 }

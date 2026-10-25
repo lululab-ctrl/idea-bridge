@@ -16,7 +16,12 @@ export interface User {
   home: "capture" | "dashboard";
   notify_email: number;
   notify_push: number;
+  // Set when the admin is previewing the app as this person (read-only).
+  viewed_by?: { id: number; name: string } | null;
 }
+
+// How long a preview as the other person lasts.
+export const PREVIEW_HOURS = 2;
 
 export function hashPassword(pw: string): string {
   const salt = randomBytes(16);
@@ -35,14 +40,16 @@ export function verifyPassword(pw: string, stored: string | null): boolean {
 export const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const iso = (ms: number) => nowText(new Date(ms));
 
-export async function createSession(db: DB, userId: number, device: string | null): Promise<string> {
+export async function createSession(db: DB, userId: number, device: string | null, opts: { impersonatorId?: number } = {}): Promise<string> {
   const token = randomBytes(32).toString("base64url");
+  const ms = opts.impersonatorId ? PREVIEW_HOURS * 3600_000 : config.sessionDays * 86400_000;
   await db.run(
-    "INSERT INTO sessions (id, user_id, device, expires_at) VALUES (?, ?, ?, ?)",
+    "INSERT INTO sessions (id, user_id, device, expires_at, impersonator_id) VALUES (?, ?, ?, ?, ?)",
     sha(token),
     userId,
     device?.slice(0, 200) ?? null,
-    iso(Date.now() + config.sessionDays * 86400_000),
+    iso(Date.now() + ms),
+    opts.impersonatorId ?? null,
   );
   return token;
 }
@@ -56,18 +63,25 @@ export function bearer(req: Request): string | null {
 export async function userFromRequest(db: DB, req: Request): Promise<User | null> {
   const token = bearer(req);
   if (!token) return null;
-  const row = await db.get<User & { sid: string; last_seen_at: string }>(
-    `SELECT u.id, u.name, u.email, u.role, u.home, u.notify_email, u.notify_push, s.id AS sid, s.last_seen_at
-     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ?`,
+  const row = await db.get<User & { sid: string; last_seen_at: string; imp_id: number | null; imp_name: string | null }>(
+    `SELECT u.id, u.name, u.email, u.role, u.home, u.notify_email, u.notify_push, s.id AS sid, s.last_seen_at,
+            s.impersonator_id AS imp_id, a.name AS imp_name
+     FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN users a ON a.id = s.impersonator_id
+     WHERE s.id = ? AND s.expires_at > ?`,
     sha(token),
     nowText(),
   );
   if (!row) return null;
+  // A preview only works while the admin who opened it is still an admin.
+  if (row.imp_id && !(await db.get("SELECT 1 FROM users WHERE id = ? AND role = 'organizer'", row.imp_id))) return null;
+  // Sessions stay alive as long as the app is used: each visit (at most once an
+  // hour) pushes the expiry a full SESSION_DAYS ahead. Previews never extend.
   if (Date.now() - Date.parse(row.last_seen_at.replace(" ", "T") + "Z") > 3600_000) {
-    await db.run("UPDATE sessions SET last_seen_at = now_text() WHERE id = ?", row.sid);
+    if (row.imp_id) await db.run("UPDATE sessions SET last_seen_at = now_text() WHERE id = ?", row.sid);
+    else await db.run("UPDATE sessions SET last_seen_at = now_text(), expires_at = ? WHERE id = ?", iso(Date.now() + config.sessionDays * 86400_000), row.sid);
   }
-  const { sid: _s, last_seen_at: _l, ...user } = row;
-  return user;
+  const { sid: _s, last_seen_at: _l, imp_id, imp_name, ...user } = row;
+  return { ...user, viewed_by: imp_id ? { id: imp_id, name: imp_name ?? "Admin" } : null };
 }
 
 export async function endSession(db: DB, req: Request) {
