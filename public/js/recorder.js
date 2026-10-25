@@ -1,3 +1,5 @@
+import { API_BASE, authHeaders } from "./lib.js";
+
 // Voice recording that never loses an idea:
 //  1. audio is recorded in small chunks,
 //  2. the finished recording is saved on the phone (IndexedDB) BEFORE uploading,
@@ -63,7 +65,7 @@ export class Recorder {
     });
     const mime = pickMime();
     this.mime = mime || "audio/webm";
-    this.rec = new MediaRecorder(this.stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 48000 });
+    this.rec = new MediaRecorder(this.stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 24000 });
     this.chunks = [];
     this.rec.ondataavailable = (e) => e.data?.size && this.chunks.push(e.data);
     this.startedAt = Date.now();
@@ -169,32 +171,48 @@ export async function saveText(text, questionId) {
   return item.clientId;
 }
 
-async function uploadOne(item) {
+async function call(method, path, body) {
   let res;
-  if (item.text != null) {
-    res = await fetch("/api/recordings/text", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-ideabridge": "1" },
-      body: JSON.stringify({ text: item.text, client_id: item.clientId, captured_at: item.capturedAt, question_id: item.questionId }),
+  try {
+    res = await fetch(API_BASE + path, {
+      method,
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
     });
-  } else {
-    const ext = item.mime.includes("mp4") || item.mime.includes("aac") ? "m4a" : item.mime.includes("ogg") ? "ogg" : "webm";
-    const form = new FormData();
-    form.append("client_id", item.clientId);
-    form.append("captured_at", item.capturedAt);
-    form.append("duration", String(Math.round(item.duration ?? 0)));
-    if (item.questionId) form.append("question_id", String(item.questionId));
-    form.append("file", item.blob, `recording.${ext}`);
-    res = await fetch("/api/recordings", { method: "POST", credentials: "same-origin", headers: { "x-ideabridge": "1" }, body: form });
+  } catch {
+    throw new Error("offline");
   }
-  if (res.status === 401) throw Object.assign(new Error("signed out"), { permanent: false });
-  if (res.status === 400 || res.status === 413 || res.status === 415) {
-    const body = await res.json().catch(() => ({}));
-    throw Object.assign(new Error(body.error || "Upload rejected"), { permanent: true });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 400 || res.status === 413 || res.status === 415) throw Object.assign(new Error(data.error || "Upload rejected"), { permanent: true });
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data;
+}
+
+// 1) register the recording, 2) send the audio straight to storage, 3) confirm.
+// Every step is safe to repeat, so an interrupted upload simply resumes.
+async function uploadOne(item) {
+  if (item.text != null) {
+    return call("POST", "/api/recordings/text", { text: item.text, client_id: item.clientId, captured_at: item.capturedAt, question_id: item.questionId });
   }
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  return res.json();
+  const start = await call("POST", "/api/recordings", {
+    client_id: item.clientId,
+    captured_at: item.capturedAt,
+    duration: Math.round(item.duration ?? 0),
+    question_id: item.questionId,
+    mime: item.mime,
+    size: item.blob.size,
+  });
+  if (start.uploadUrl) {
+    let res;
+    try {
+      res = await fetch(start.uploadUrl, { method: "PUT", body: item.blob, headers: { "content-type": item.mime || "audio/webm", "x-upsert": "true" } });
+    } catch {
+      throw new Error("offline");
+    }
+    if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+  }
+  if (!start.uploaded) await call("POST", `/api/recordings/${start.id}/uploaded`);
+  return start;
 }
 
 // Uploads everything waiting in the outbox. Safe to call any time.

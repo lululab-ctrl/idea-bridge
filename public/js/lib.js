@@ -8,6 +8,31 @@ export const html = htm.bind(h);
 export { render };
 
 // ------------------------------------------------------------------ API
+// The API runs on Supabase; its address comes from /config.js (written at build).
+export const API_BASE = (window.IDEA_BRIDGE_API ?? "").replace(/\/$/, "");
+const TOKEN_KEY = "ib_token";
+
+export function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+export function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* private mode: stays signed in for this visit only */
+  }
+}
+
+export function authHeaders() {
+  const t = getToken();
+  return t ? { authorization: `Bearer ${t}` } : {};
+}
+
 export class ApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -16,24 +41,83 @@ export class ApiError extends Error {
 }
 
 export async function api(method, url, body) {
-  const opts = { method, headers: { "x-ideabridge": "1" }, credentials: "same-origin" };
-  if (body instanceof FormData) opts.body = body;
-  else if (body !== undefined) {
+  const opts = { method, headers: { ...authHeaders() } };
+  if (body !== undefined) {
     opts.headers["content-type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
   let res;
   try {
-    res = await fetch(url, opts);
+    res = await fetch(API_BASE + url, opts);
   } catch {
     throw new ApiError(0, "You seem to be offline. Check your connection and try again.");
   }
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
   if (!res.ok) {
-    if (res.status === 401 && !url.includes("/api/login")) window.dispatchEvent(new Event("ib:signedout"));
+    if (res.status === 401 && !url.includes("/api/login")) {
+      setToken(null);
+      window.dispatchEvent(new Event("ib:signedout"));
+    }
     throw new ApiError(res.status, data?.error || `Request failed (${res.status}).`);
   }
   return data;
+}
+
+// Saves a file the API produces (export, Markdown) to the device.
+export async function download(url, filename) {
+  let res;
+  try {
+    res = await fetch(API_BASE + url, { headers: authHeaders() });
+  } catch {
+    throw new ApiError(0, "You seem to be offline.");
+  }
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "Download failed.");
+  saveBlob(await res.blob(), filename);
+}
+
+export function slugify(s) {
+  return (
+    String(s)
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 50) || "untitled"
+  );
+}
+
+export function saveBlob(blob, filename) {
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+// Opens a stored file (signed, short-lived link) in a new tab.
+export async function openFile(url) {
+  const win = window.open("", "_blank");
+  try {
+    const { url: signed } = await get(url);
+    if (win) win.location.href = signed;
+    else location.href = signed;
+  } catch (e) {
+    win?.close();
+    toast(e.message, "error");
+  }
+}
+
+// Uploads a file straight to storage with a one-time link from the API.
+export async function uploadTo(uploadUrl, file, contentType) {
+  let res;
+  try {
+    res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "content-type": contentType || file.type || "application/octet-stream", "x-upsert": "true" } });
+  } catch {
+    throw new ApiError(0, "Upload failed. Check your connection.");
+  }
+  if (!res.ok) throw new ApiError(res.status, `Upload failed (${res.status}).`);
 }
 export const get = (url) => api("GET", url);
 export const post = (url, body = {}) => api("POST", url, body);
@@ -298,8 +382,15 @@ export function AudioDock() {
     if (a.readyState >= 1 && a.dataset.rec === String(cur.recordingId)) seek();
     else {
       a.dataset.rec = String(cur.recordingId);
-      a.src = `/api/recordings/${cur.recordingId}/audio`;
-      a.addEventListener("loadedmetadata", seek, { once: true });
+      get(`/api/recordings/${cur.recordingId}/audio`)
+        .then(({ url }) => {
+          a.src = url;
+          a.addEventListener("loadedmetadata", seek, { once: true });
+        })
+        .catch((e) => {
+          toast(e.message, "error");
+          setCur(null);
+        });
     }
   }, [cur]);
   player = ref;

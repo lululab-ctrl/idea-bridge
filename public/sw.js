@@ -1,8 +1,8 @@
 // Idea Bridge service worker: notifications and a fast, offline-capable app shell.
 // App files are fetched from the network first so updates arrive immediately;
 // the cached copy is only used when offline. API calls are never cached.
-const CACHE = "ib-shell-v1";
-const SHELL = ["/", "/css/app.css", "/js/main.js", "/js/lib.js", "/js/recorder.js", "/icons/icon-192.png", "/manifest.webmanifest"];
+const CACHE = "ib-shell-v2";
+const SHELL = ["/", "/config.js", "/css/app.css", "/js/main.js", "/js/lib.js", "/js/recorder.js", "/icons/icon-192.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));

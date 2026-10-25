@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
-import { AudioDock, get, go, html, icon, render, useData, useRoute } from "./lib.js";
+import { AudioDock, get, getToken, go, html, icon, parseHash, render, setToken, useData, useRoute } from "./lib.js";
 import { Capture } from "./views/capture.js";
-import { Login, Setup } from "./views/auth.js";
+import { Login, SignInLink, Setup } from "./views/auth.js";
 import { Dashboard } from "./views/dashboard.js";
 import { Review } from "./views/review.js";
 import { Library } from "./views/library.js";
@@ -163,6 +163,8 @@ function App() {
   if (error && !state) {
     return html`<div class="auth"><div class="card"><h2>Can't reach Idea Bridge</h2><p class="muted">${error}</p><button class="btn primary" onClick=${load}>Try again</button></div></div>`;
   }
+  const hashParts = parseHash().parts;
+  if (hashParts[0] === "signin" && hashParts[1]) return html`<${SignInLink} token=${hashParts[1]} onDone=${load} />`;
   if (!state) return html`<div class="boot">Idea Bridge</div>`;
   if (state.setupNeeded) return html`<${Setup} onDone=${load} />`;
   if (!state.user) return html`<${Login} onDone=${load} />`;

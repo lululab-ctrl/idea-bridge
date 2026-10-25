@@ -28,20 +28,40 @@ The limits are enforced by the server, not just hidden in the interface. Every r
 - **Deleted tasks, files, documents and notes** also go to Trash and can be restored exactly as they were.
 - **Ideas are never deleted**, only archived (and can be brought back any time).
 - **Removing something permanently** is possible only for the admin, from Trash, one item at a time, after typing `DELETE`.
-- Nightly backups keep 14 days of complete snapshots on top of all this.
+- A nightly database backup (kept 30 days) sits on top of all this.
+
+---
 
 ---
 
 ## Contents
 
-1. [What it does](#what-it-does)
-2. [Setting it up (about 30 minutes, no coding)](#setting-it-up)
-3. [Daily use](#daily-use)
-4. [Costs](#costs)
-5. [Privacy, security and backups](#privacy-security-and-backups)
-6. [Troubleshooting](#troubleshooting)
-7. [How it works (technical)](#how-it-works)
-8. [Design decisions and research](#design-decisions-and-research)
+1. [What it costs: nothing](#what-it-costs-nothing)
+2. [What it does](#what-it-does)
+3. [Setting it up (about 45 minutes, no coding)](#setting-it-up)
+4. [Daily use](#daily-use)
+5. [Free-plan limits and what happens when you reach them](#free-plan-limits)
+6. [Privacy, security and backups](#privacy-security-and-backups)
+7. [Troubleshooting](#troubleshooting)
+8. [How it works (technical)](#how-it-works)
+9. [Design decisions and research](#design-decisions-and-research)
+
+---
+
+## What it costs: nothing
+
+Every service runs on a free plan that needs **no credit card**, so nothing can ever be charged by surprise. When a free limit is reached, the affected work waits and continues later. Nothing is lost.
+
+| Part | Service | Why it's free |
+|---|---|---|
+| Understanding (Claude) | Anthropic API, paid from the **monthly API credits included in your Claude Team plan** | Team plans include API credits each month ($20 per Standard seat). No payment method is attached, so when the credits run out requests simply stop until next month. The app also has its own monthly cap (default $18), so it never uses everything. |
+| Transcription | **Groq** free plan (Whisper large-v3) | Free with no card. Hebrew, English and mixed speech. |
+| Database, file storage, server | **Supabase** free plan | 500 MB database, 1 GB files, server functions and a scheduler. No card. |
+| Web app | **Cloudflare Pages** free plan | Unlimited visits for a static site. No card. |
+| Deploys and nightly backups | **GitHub Actions** | Free minutes for this size. |
+| Email digests (optional) | **Resend** free plan | 3,000 emails a month. Push notifications work without it. |
+
+Daily work uses Claude Haiku (fast and cheap); reports, evaluations, plans, insights and documents use Claude Sonnet. At a few recordings a day this is typically a few dollars of credits a month. **Settings → System** shows exactly how much has been used.
 
 ---
 
@@ -55,76 +75,79 @@ The limits are enforced by the server, not just hidden in the interface. Every r
 | **Reports** | A full report per idea covering summary, underlying vision, problem, how it might work, audience, business model, feasibility, next steps and open questions. Every point is labeled **He said** / **Interpretation** / **AI suggestion**, with a tap-to-listen link to his exact words. |
 | **Review queue** | Everything that needs a decision, one item at a time, with keyboard shortcuts. Updates you only need to see can be acknowledged in one click. |
 | **Questions for him** | The AI drafts clarifying questions. You send the good ones with one tap; he sees them on his record screen and answers by voice. The answer updates the idea automatically. |
-| **Library** | Searches every idea, transcript and task by keyword *and* by meaning ("AI business" finds "a bot that sells stuff"). Filter by status, theme, tag, priority or commitment. |
+| **Library** | Searches every idea, transcript and task by keyword *and* by meaning: the AI expands your search into related words in English and Hebrew, so "AI business" also finds "a bot that sells stuff". Filter by status, theme, tag, priority or commitment. |
 | **Evaluation** | Transparent 1–5 scores on value, feasibility, cost, complexity, strategic fit and effort, each with its reason, plus "biggest unknown" and "cheapest test". You set the weights. |
 | **Projects and tasks** | Approving an idea creates a project. The AI drafts milestones and tasks with instructions, expected outcomes, owners and due dates; you choose which tasks to create. Tasks have priorities, deadlines, assignees, notes and reminders. |
 | **Insights** | A weekly scan for recurring patterns, the most promising ideas, conflicts, combinations, and automatic themes. Daily and weekly digests by email and push. |
 | **Ask** | Ask anything about the library ("what did he say about pricing?"). Answers cite the ideas they come from. |
 | **Documents** | Business concept, implementation plan, research brief, product requirements, one-page summary or anything you describe, generated from an idea and downloadable. |
 | **Teaching** | Correct any field and the correction is kept, even when the AI later updates the idea. Add his vocabulary ("'the platform' means…") and your preferences; the AI uses them every time. |
-| **Your data** | One-click export of everything: audio, transcripts, readable documents for every idea, and the database. Nightly backups, optionally copied off-site. |
+| **Your data** | One-click export of every idea as a readable document, every transcript and a full data file. Each recording's audio can be played and downloaded. Nightly database backups. |
+
+---
 
 ---
 
 ## Setting it up
 
-You'll create four accounts, paste four keys, and press deploy. Each step has a link.
+You'll create four free accounts and copy a few keys into GitHub. GitHub then deploys everything. Keep a private note open to paste values into as you go.
 
-### 1. Get the AI keys (15 minutes)
+### 1. Supabase: database, storage and server (10 minutes)
 
-| Service | What it's for | Where | Notes |
-|---|---|---|---|
-| **Anthropic** (Claude) | Understanding, reports, plans | https://console.anthropic.com → Settings → API keys | Add a payment method and a monthly spending limit. |
-| **ElevenLabs** | Transcription (best Hebrew quality, exact timestamps) | https://elevenlabs.io/app/settings/api-keys | Pay-as-you-go. Give the key access to Speech to Text. |
-| **OpenAI** | Search by meaning, plus backup transcription | https://platform.openai.com/api-keys | Add a small prepaid balance (e.g. $10). |
+1. Go to **supabase.com** → *Start your project* → sign in with GitHub. Choose the **Free** plan.
+2. **New project**: name `idea-bridge`, region **Central EU (Frankfurt)** (closest to Israel). Click *Generate a password* and save it in your note as **SUPABASE_DB_PASSWORD**.
+3. When it's ready, copy the project **reference** from the address bar (the part after `/project/`, e.g. `abcdefghijklmnop`). Save it as **SUPABASE_PROJECT_REF**.
+4. Click **Connect** (top of the project) → **Session pooler** → copy the URI and replace `[YOUR-PASSWORD]` with the password from step 2. Save it as **SUPABASE_DB_URL** (used only by the nightly backup).
+5. Click your avatar → **Account preferences → Access Tokens** → *Generate new token* named `github-deploy`. Save it as **SUPABASE_ACCESS_TOKEN**.
 
-Keep the keys somewhere safe. They're like passwords.
+### 2. Groq: transcription (3 minutes)
 
-> You can start with only the Anthropic and OpenAI keys. OpenAI will then transcribe, but without exact timestamps, so "listen from here" is approximate.
+1. Go to **console.groq.com** and sign in. No card is asked for; stay on the free plan.
+2. **API Keys** → *Create API Key* named `idea-bridge`. Save it as **GROQ_API_KEY**.
 
-### 2. Put the code on GitHub (5 minutes)
+### 3. Claude: understanding (5 minutes, done by the Team plan's Owner)
 
-1. Create a free account at https://github.com.
-2. Create a new **private** repository called `idea-bridge`.
-3. Upload the contents of this folder (or ask Claude to push it for you).
+The monthly API credits belong to the organization, so the person who is **Owner** of your Claude Team plan does this:
 
-### 3. Deploy on Railway (10 minutes, about $5–8/month)
+1. On **claude.ai** → **Settings → Organization → Billing**, find the monthly API credits and claim them. This links a Claude Console organization (create one if asked). No payment method is needed.
+2. In **console.anthropic.com** → **API Keys** → *Create Key* named `idea-bridge`. Save it as **ANTHROPIC_API_KEY**.
+3. Recommended: under **Limits**, set a monthly spend limit for the workspace as a second safety net.
 
-Railway runs the app around the clock and gives it a secure web address.
+### 4. Cloudflare Pages: the web app (10 minutes)
 
-1. Sign up at https://railway.com with your GitHub account and choose the Hobby plan.
-2. **New Project → Deploy from GitHub repo →** pick `idea-bridge`. Railway finds the `Dockerfile` and builds it.
-3. Open the service → **Settings → Networking → Generate Domain**. Copy the address (e.g. `https://idea-bridge-production.up.railway.app`).
-4. **Add a volume** (this is where everything is stored): right-click the service → **Attach volume** → mount path **`/data`**.
-5. Turn on volume backups: open the volume → **Backups** → enable the daily schedule.
-6. Open **Variables** and add these (see `.env.example` for all options):
+1. Go to **dash.cloudflare.com**, sign up (free, no card).
+2. **Workers & Pages → Create → Pages → Connect to Git** → choose the `idea-bridge` repository.
+3. Build settings:
+   - Build command: `npm ci && npm run build:web`
+   - Build output directory: `dist`
+   - Environment variable: `IDEA_BRIDGE_API_URL` = `https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1`
+4. *Save and Deploy*. Copy the address it gives you (e.g. `https://idea-bridge.pages.dev`) and save it as **APP_URL** (no slash at the end).
 
-   | Variable | Value |
+### 5. GitHub: secrets and the first deploy (10 minutes)
+
+1. In the repository on GitHub → **Settings → Secrets and variables → Actions → New repository secret**. Add each value from your note:
+
+   | Secret | Required |
    |---|---|
-   | `PUBLIC_URL` | the address from step 3 |
-   | `ANTHROPIC_API_KEY` | your Anthropic key |
-   | `ELEVENLABS_API_KEY` | your ElevenLabs key |
-   | `OPENAI_API_KEY` | your OpenAI key |
-   | `TZ` | your time zone, e.g. `Asia/Jerusalem` |
-   | `VAPID_SUBJECT` | `mailto:` followed by your email (needed for iPhone notifications) |
+   | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`, `SUPABASE_DB_URL` | yes |
+   | `ANTHROPIC_API_KEY`, `GROQ_API_KEY` | yes |
+   | `APP_URL` | yes |
+   | `WORKER_SECRET`: any long random text (e.g. 40 characters from a password generator) | yes |
+   | `RESEND_API_KEY`, `MAIL_FROM` (e.g. `Idea Bridge <ideas@yourdomain.com>`) | only for email digests |
+   | `VAPID_SUBJECT` (e.g. `mailto:you@example.com`) | optional, for push notifications |
 
-7. Railway redeploys. Open the address. You'll see the welcome screen.
+2. **Actions → Deploy API → Run workflow**. It runs the tests, sets up the database, stores the keys on Supabase and deploys the server. It takes about 3 minutes and should end green.
+3. **Actions → Nightly backup → Run workflow** once, to check the backup works.
 
-### 4. First run (5 minutes)
+From now on every change pushed to `main` deploys by itself.
 
-Do this right after the first deploy, before sharing the address: the first person to open the app creates the accounts.
+### 6. First run (5 minutes, do it right away)
 
-1. Enter your name, an email (optional) and your password. You become the **admin**. Then enter his name and, if you like, a password for him (he becomes the **idea contributor**).
-2. On the next screen, tap **Sign-in link** next to his name (or let him sign in with his name and password). Scan the QR code with his phone and tap **Continue**. The app opens on the record button, already signed in.
-3. Put it on his home screen:
-   - **iPhone (Safari):** Share → **Add to Home Screen**.
-   - **Android (Chrome):** ⋮ → **Install app**.
-4. Do the same on your phone (sign in with your password), then turn on notifications in **Settings**. On iPhone this only works from the home-screen app.
-5. Write a few lines under **Settings → Our goals**. The AI uses them to judge strategic fit.
-
-Optional extras (all in `.env.example`):
-- **Email digests:** set `SMTP_URL` (any email provider's SMTP, e.g. Gmail with an app password, Resend or Postmark).
-- **Off-site backups:** create a free Cloudflare R2 bucket and set the `BACKUP_S3_*` variables.
+1. Open your **APP_URL**. The first person to open it creates the space, so do this immediately after deploying.
+2. Fill in **you** (name `Lulu`) as Admin and **Matan** as Idea contributor, each with your own password. Passwords are never stored in the code; only a secure hash is kept.
+3. Add the app to your home screen: iPhone: Share → *Add to Home Screen*; Android: menu → *Install app*.
+4. For Matan's phone: **Settings → People → Sign-in link for a phone** shows a QR code. He scans it, taps *Continue* and is signed in. Then he adds it to his home screen.
+5. Optional: fill in **Our goals** and a few words of **his vocabulary** under Settings. The AI uses both every time.
 
 ---
 
@@ -157,122 +180,126 @@ Brainstorms never turn into obligations by themselves. Only **Approve** creates 
 
 ---
 
-## Costs
+---
 
-Everything runs on pay-as-you-go services, and **Settings → System** shows the exact spend each month. Rough estimates for **30 recordings a day, about 1.5 minutes each**:
+## Free-plan limits
 
-| Service | Estimate per month |
-|---|---|
-| Railway (hosting + 5 GB storage) | $5–8 |
-| ElevenLabs transcription (~22 hours of audio) | ~$5 |
-| OpenAI search embeddings | under $1 |
-| Claude, with Claude Opus 5.5 (the default) | roughly $100–200 |
+| Limit | What happens | What you can do |
+|---|---|---|
+| **Claude credits / the app's monthly budget** (default $18) | New recordings are saved and transcribed; understanding waits until the 1st of next month. A banner shows on Today. | Raise **Settings → Preferences → Monthly AI budget** if the Team plan has credits left. |
+| **Groq daily transcription limit** (free plan, roughly hours of audio per day) | Recordings wait and are transcribed automatically when the limit resets. | Nothing; it catches up by itself. |
+| **1 GB of file storage** | At 90% full, the audio of the oldest processed recordings is removed (down to 75%). Transcripts, quotes, ideas and reports are always kept. | Download recordings you want to keep forever from their page. |
+| **500 MB database** | Text is small; this is many years of ideas. | – |
+| **Supabase pauses projects after 7 days without use** | The nightly backup also keeps the project awake. If it ever pauses, open the Supabase dashboard and click *Restore*. | – |
+| **Server functions run at most 150 seconds per call** | Work is split into small steps, so long recordings are fine (up to 25 MB, about 2 hours at the app's recording quality). | – |
 
-These are estimates. Claude is the largest cost and grows with how much he records and how many reports and documents you generate. To spend roughly half as much on Claude, set the variable `CLAUDE_MODEL=claude-sonnet-5-5`. The quality of interpretation is somewhat lower, so try it on real recordings before deciding. Set a monthly spending limit in the Anthropic console either way.
+**Settings → System** shows Claude usage, storage use, when the background worker last ran and anything waiting to retry.
 
 ---
 
 ## Privacy, security and backups
 
-- **Who can see it:** only the two of you. Every page and file requires sign-in, sessions are stored as secure cookies, passwords use scrypt hashing, sign-in links work once and expire after 72 hours, and repeated wrong passwords are blocked for 15 minutes.
-- **AI providers:** recordings and text are sent to Anthropic, ElevenLabs and OpenAI for processing through their business APIs. Anthropic's and OpenAI's API terms say API data isn't used to train their models by default. ElevenLabs documents zero data retention only for enterprise plans, so check their current terms if your ideas are especially sensitive.
-- **Backups:** the app takes a snapshot every night (kept 14 days on the volume). Railway's volume backups add a second layer. With R2 configured, snapshots and every audio file are also copied off-site.
-- **Export:** Settings → System → **Download everything** gives you a zip with all audio, transcripts, ideas as readable documents, files and the database.
-- **Restoring:** each nightly snapshot is a complete SQLite database (`ideabridge-YYYY-MM-DD-HH-MM.db.gz`). To restore, stop the app, unzip a snapshot to `/data/ideabridge.db` and start it again.
+- **Your data isn't used for training.** Anthropic's API (including Team plan credits) doesn't train on your content. For Groq, read its current privacy policy and terms at groq.com before the first recording; I couldn't fully confirm how its free plan treats audio. Google's free Gemini tier was rejected for this reason (it may use content for training and human review).
+- **Everything is private.** Storage buckets are private; audio and files are reached through links that expire. The database is only reachable by the server (row-level security blocks the public keys).
+- **Sign-in:** passwords are hashed with scrypt; repeated wrong passwords are slowed down; sessions can be ended by changing a password. Sign-in links are single-use and expire.
+- **Permissions are enforced on the server**, not only hidden in the app.
+- **Backups:** every night GitHub saves a full database dump (kept 30 days; *Actions → Nightly backup → the run → Artifacts*). Audio isn't in the dump; it stays in Supabase storage. **Settings → Download everything** makes a readable copy any time.
+- **Restoring a backup:** download the artifact, unzip it, then run (with Docker, or with Postgres 17's `pg_restore` installed):
+  ```bash
+  pg_restore --clean --if-exists --no-owner --dbname "<SUPABASE_DB_URL>" idea-bridge.dump
+  ```
 
 ---
 
 ## Troubleshooting
 
-| Problem | What to do |
+| Problem | Fix |
 |---|---|
-| "AI understanding is not set up" | `ANTHROPIC_API_KEY` is missing or wrong. Recordings wait safely and are processed automatically after you fix the key and the app restarts. |
-| A recording shows "Needs attention" | Open it to see why, then press **Try again**. The audio is never lost. |
-| Microphone doesn't start | On iPhone, use Safari or the home-screen app, and allow the microphone under Settings → Safari → Microphone. On Android, check site permissions in Chrome. |
-| No notifications on iPhone | They only work from the home-screen app (iOS 16.4 or later). Open it from the home screen, then Settings → **Turn on for this device**. |
-| Sign-in link says expired | Links work once and expire after 72 hours. Make a new one in Settings → People. |
-| Something else | **Settings → System** lists failed background jobs with their error and a **Retry** button. |
+| The app says it can't reach the server | Check `IDEA_BRIDGE_API_URL` in Cloudflare Pages (it must end in `/functions/v1`), then *Retry deployment*. Check that **Deploy API** succeeded on GitHub. |
+| Sign-in works on the computer but requests fail with a CORS error | `APP_URL` must exactly match the Cloudflare address (with `https://`, no slash at the end). Fix the secret and run **Deploy API** again. |
+| Recordings stay "Waiting" | **Settings → System**: check "last ran". If it never runs, open the Supabase dashboard → **Integrations → Cron** and confirm the job `idea-bridge-worker` exists. Any use of the app also starts the worker, so work still moves while someone is using it. |
+| "This month's budget is used up" | See [Free-plan limits](#free-plan-limits). |
+| Transcription errors mention a limit | Groq's free daily limit; it continues by itself after the reset. |
+| Forgot the admin password | If you're still signed in anywhere, use **Settings → People → Change your password**. Otherwise make a one-time sign-in link: in Supabase → **SQL editor**, replace `PICK-A-LONG-RANDOM-WORD` with your own random text and run the SQL below, then open `<APP_URL>/#/signin/PICK-A-LONG-RANDOM-WORD`, tap *Continue* and change your password in Settings. The link works once, for one hour. |
+| Push notifications don't arrive on iPhone | They need iOS 16.4+ and the app opened from the home screen. |
+
+One-time admin sign-in link (for a forgotten password):
+
+```sql
+INSERT INTO login_links (token_hash, user_id, expires_at)
+SELECT encode(sha256('PICK-A-LONG-RANDOM-WORD'::bytea), 'hex'), id, ago_text(-3600)
+FROM users WHERE role = 'organizer';
+```
 
 ---
 
 ## How it works
 
 ```
-Phone (PWA) ──► Node.js server (Fastify) ──► SQLite (WAL) + audio files on /data
-                     │
-                     ├─ Job queue (persistent, retries with backoff)
-                     │    process_recording → transcribe → extract thoughts
-                     │      → for each thought: find similar ideas (keywords + meaning)
-                     │      → decide: new / add to idea / possible duplicate (+ connections)
-                     │      → write or update the idea card (new version)
-                     │    report · score · plan · deliverable · digests · insights · backups
-                     │
-                     ├─ ElevenLabs Scribe (OpenAI as fallback)  — transcription
-                     ├─ Claude (structured outputs)              — understanding
-                     └─ OpenAI embeddings                        — meaning search
+Phone / computer (PWA on Cloudflare Pages)
+   │  audio goes straight to Supabase Storage (signed upload link)
+   ▼
+Supabase Edge Function "api" (Deno) ──► Postgres (all data, job queue, full-text search)
+   ▲                     │
+   │ every minute        ├─ Groq Whisper large-v3   — transcription (with timestamps)
+pg_cron + pg_net         └─ Claude Haiku / Sonnet   — understanding, structured JSON outputs
+   (background worker)
 ```
 
-**Data model:** recordings (never altered) → fragments (single thoughts, each with exact quote and timestamps) → ideas (living cards, versioned on every change) → projects → tasks. Links between ideas carry a type, confidence, reason and status (suggested / confirmed / dismissed). Everything that needs a person goes into `review_items`.
+Recording pipeline, one small step per job (each fits within the free plan's time limit):
+`process_recording` (transcribe) → `analyze_recording` (split into thoughts, with search words in English and Hebrew) → `handle_fragment` for each thought (find similar ideas; decide new / add to idea / possible duplicate; connections) → `finish`. Reports, evaluations, plans, documents, digests and insights are jobs too. Jobs retry with backoff, survive restarts, and wait (without using up retries) when a monthly budget or rate limit is reached.
 
-**Automatic vs. asked:** a thought is attached to an existing idea automatically only when the AI is at least 85% confident it's the same concept. Between 50% and 85% it becomes a separate idea plus a "possible duplicate" for you to decide. Thresholds are in `src/server/pipeline.ts`.
+**Data model:** recordings (never altered) → fragments (single thoughts, each with exact quote and timestamps) → ideas (living cards, versioned on every change) → projects → tasks. Links between ideas carry a type, confidence, reason and status. Everything that needs a person goes into `review_items`.
 
-**Corrections stick:** fields you edit are marked as corrected, and later AI updates keep them.
+**Automatic vs. asked:** a thought is attached to an existing idea automatically only when the AI is at least 85% confident it's the same concept. Between 50% and 85% it becomes a separate idea plus a "possible duplicate" for you to decide. Thresholds are in `supabase/functions/api/lib/pipeline.ts`.
+
+**Search:** Postgres full-text search over ideas, transcripts and tasks, combined with "meaning" search: Claude turns the question into related words and phrases in both languages, and each thought is stored with its own search words. This replaces vector embeddings, which would need another paid service.
 
 **Project layout**
 
 ```
-src/server/
-  index.ts        start-up
-  app.ts          web server, security headers, static files
-  config.ts       environment variables
-  db.ts           schema and migrations
-  pipeline.ts     recording → thoughts → ideas
-  ideas.ts        idea versions, merges, links, review items
-  search.ts       full-text + meaning search
-  assistant.ts    Q&A and document generation
-  periodic.ts     digests, insights, reminders, backups
-  notify.ts       in-app, push and email notifications
-  jobs.ts         persistent job queue
-  auth.ts         sessions, passwords, sign-in links
-  ai/             Claude, transcription, embeddings, prompts, schemas, test doubles
-  routes/         HTTP API
-public/           the app (Preact + htm, no build step), service worker, icons
-test/             end-to-end and unit tests (simulated AI)
+supabase/
+  migrations/             database schema, storage buckets, scheduler
+  functions/api/
+    index.ts              request handling, CORS, worker entry point
+    lib/                  pipeline, ideas, search, jobs, periodic, trash, auth, storage, notify
+    lib/ai/               Claude, Groq, prompts, schemas, test doubles
+    lib/routes/           HTTP API
+    tests/                end-to-end tests against a real Postgres (simulated AI)
+public/                   the app (Preact + htm, no build step), service worker, icons
+scripts/build-web.mjs     builds dist/ for Cloudflare Pages
+.github/workflows/        deploy and nightly backup
 ```
 
-**Development**
+**Development** (needs Deno 2, Node 20+, and a local Postgres on port 54329, user `postgres`)
 
 ```bash
 npm install
-AI_MODE=mock npm run dev     # simulated AI, no keys needed, http://localhost:3000
-npm test                     # end-to-end + unit tests
-npm run build && npm start   # production build
+cd supabase/functions/api
+deno task test            # end-to-end tests
+deno task check           # type check
+# run locally with simulated AI:
+DATABASE_URL=postgres://postgres@localhost:54329/ideabridge AI_MODE=mock STORAGE_MODE=local \
+  LOCAL_STORAGE_DIR=/tmp/ib WORKER_SECRET=dev APP_URL=http://localhost:8080 deno run -A index.ts
+# in another terminal, from the repository root:
+IDEA_BRIDGE_API_URL=http://localhost:8000 npm run build:web && npx serve dist -l 8080
 ```
 
 ---
 
 ## Design decisions and research
 
-Researched on 25 October 2026. Prices change, so check the providers' pages.
+Researched on 25 October 2026. Free plans change, so check the providers' pages once a year.
 
-**Hosting: Railway.** Fly.io, Render, DigitalOcean App Platform and a plain VPS were also considered.
-- Railway runs an always-on container with a persistent volume.
-- It has built-in scheduled volume backups and deploys from GitHub without command-line tools.
-- It costs about $5–8 a month at this size.
-- Fly.io's default scale-to-zero would stop the background worker. Render needs a paid plan for disks. App Platform has no persistent volumes. A VPS needs ongoing server administration.
+**Goal: genuinely free, no card, maintainable.** Options were rejected when they need a payment method, are trials, sleep in a way that stops background work, or need a computer that's always on.
 
-**Database: SQLite.** One file, no separate database server, simple to back up. SQLite FTS5 handles keyword search. Meaning search compares vectors directly, which takes milliseconds at a few thousand ideas.
-
-**Transcription: ElevenLabs Scribe v2, with OpenAI as fallback.**
-- It is the only option that does all of the following in one synchronous call: Hebrew, automatic language detection, word-level timestamps (needed for "listen from his exact words"), the formats phones record in (webm, mp4/m4a, ogg), and long recordings. It costs about $0.22 per hour of audio.
-- OpenAI's current transcription models return no timestamps, and its older timestamped model `whisper-1` is scheduled to shut down in February 2027.
-- Deepgram supports Hebrew only on Nova-3 without code-switching. AssemblyAI supports Hebrew only on an older model and trains on data by default. Google Chirp's Hebrew is in preview and setup is heavy.
-
-**Embeddings: OpenAI `text-embedding-3-large` at 1024 dimensions.** It has better multilingual retrieval than the small model, it costs pennies at this volume, and it reuses the OpenAI key that is already there for backup transcription. Voyage is a good alternative, but it would mean another account.
-
-**Understanding: Claude with structured outputs.** Each step returns a strictly validated JSON shape: thoughts, linking decision, idea card, report, evaluation, plan, insights. Each prompt separates *what he said* from *interpretation* from *suggestion*. Server-side refusal fallback is enabled, so a false-positive safety refusal doesn't stall the pipeline.
-
-**Frontend: an installable web app (PWA) instead of native apps.** One codebase works on iPhone, Android and desktop, with no app store. Recording, offline saving, home-screen install and push notifications are all supported. Push on iPhone requires iOS 16.4+ and the home-screen app.
+- **Supabase** (chosen): database, file storage, server functions and a scheduler in one free plan, no card. Trade-offs: 1 GB of files, no automatic backups (covered by the nightly GitHub backup), pauses after a week unused (covered by the nightly run).
+- **Cloudflare Pages** (chosen) for the web app: free, fast, no card.
+- Rejected for hosting: Oracle Cloud free tier (needs a card), Northflank (needs a payment method), Render / Koyeb / Fly.io / Railway / Hugging Face Spaces (sleep, no persistent disk, or not free).
+- **Claude via Team plan API credits** (chosen): your team already pays for the plan, the credits need no payment method, and running out simply pauses requests. Haiku does daily work cheaply; Sonnet writes the documents that need depth.
+- **Gemini** (rejected even though Matan subscribes): the free API tier may use your content for training and human review, and the subscription's API credits need a billing account.
+- **Groq Whisper large-v3** (chosen) for transcription: free, no card, good Hebrew, returns timestamps for "listen to his exact words". Cerebras was a trial; GitHub Models no longer offers this.
+- **No vector embeddings:** every embedding service with good Hebrew either needs a card or a separate account with limits. AI-expanded full-text search gives similar results at this size.
 
 **Reliability choices:**
 - Recordings are saved on the phone before uploading.

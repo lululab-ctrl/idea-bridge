@@ -1,0 +1,16 @@
+{
+  "tasks": {
+    "test": "deno test -A --no-check=remote tests/",
+    "check": "deno check index.ts"
+  },
+  "imports": {
+    "postgres": "npm:postgres@3.4.9",
+    "zod/v4": "npm:zod@4.6.7/v4",
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@1.3.0",
+    "@anthropic-ai/sdk/": "npm:/@anthropic-ai/sdk@1.3.0/",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.117.3",
+    "qrcode": "npm:qrcode@1.5.4",
+    "web-push": "npm:web-push@3.6.7",
+    "fflate": "npm:fflate@0.8.3"
+  }
+}

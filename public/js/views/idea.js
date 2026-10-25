@@ -6,6 +6,7 @@ import {
   clock,
   COMMITMENT,
   del,
+  download,
   dueLabel,
   ErrorBox,
   get,
@@ -15,16 +16,20 @@ import {
   Loading,
   Markdown,
   Modal,
+  openFile,
   patch,
   personName,
   playAudio,
   post,
   PRIORITY,
   Quote,
+  saveBlob,
+  slugify,
   STATUS,
   StatusChip,
   toast,
   usePeople,
+  uploadTo,
   useData,
   when,
   Working,
@@ -287,7 +292,7 @@ function ReportTab({ idea, him }) {
         </div>`)}
       </div>`;
     })}
-    <div class="row"><button class="btn" disabled=${working} onClick=${() => act(() => post(`/api/ideas/${idea.id}/report`), "Rewriting the report")}>Rewrite report</button><a class="btn" href=${`/api/ideas/${idea.id}/export.md`}>Download as Markdown</a></div>
+    <div class="row"><button class="btn" disabled=${working} onClick=${() => act(() => post(`/api/ideas/${idea.id}/report`), "Rewriting the report")}>Rewrite report</button><button class="btn" onClick=${() => download(`/api/ideas/${idea.id}/export.md`, `${idea.id}-${slugify(idea.title)}.md`).catch((e) => toast(e.message, "error"))}>Download as Markdown</button></div>
   </div>`;
 }
 
@@ -376,10 +381,12 @@ function Work({ idea, people }) {
   const upload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const form = new FormData();
-    form.append("file", file);
-    await act(() => api("POST", `/api/ideas/${idea.id}/attachments`, form), "Attached");
     e.target.value = "";
+    await act(async () => {
+      const { path, uploadUrl } = await post(`/api/ideas/${idea.id}/attachments/upload-url`, { name: file.name, size: file.size });
+      await uploadTo(uploadUrl, file);
+      return post(`/api/ideas/${idea.id}/attachments`, { path, name: file.name, mime: file.type });
+    }, "Attached");
   };
   return html`<div class="grid two" style="align-items:start">
     <div class="card stack">
@@ -404,7 +411,9 @@ function Work({ idea, people }) {
       <h3>Files and links</h3>
       ${idea.attachments.map((a) => html`<div class="row nowrap" key=${a.id}>
         ${icon(a.kind === "link" ? "link" : "doc")}
-        <a class="grow" href=${a.kind === "link" ? a.url : `/api/attachments/${a.id}/file`} target="_blank" rel="noopener noreferrer">${a.name}</a>
+        ${a.kind === "link"
+          ? html`<a class="grow" href=${a.url} target="_blank" rel="noopener noreferrer">${a.name}</a>`
+          : html`<button class="grow" style="background:none;border:0;padding:0;text-align:left;color:var(--accent);cursor:pointer" onClick=${() => openFile(`/api/attachments/${a.id}/file`)}>${a.name}</button>`}
         <span class="tiny muted">${a.user_name ?? ""}</span>
         <button class="btn ghost small" aria-label="Remove" onClick=${() => act(() => del(`/api/attachments/${a.id}`), "Moved to trash")}>${icon("x")}</button>
       </div>`)}
@@ -422,7 +431,7 @@ function Work({ idea, people }) {
       <div class="modal-foot">
         <button class="btn danger" onClick=${async () => { await act(() => del(`/api/deliverables/${doc.id}`), "Moved to trash"); setDoc(null); }}>Delete</button>
         <button class="btn" onClick=${() => navigator.clipboard?.writeText(doc.markdown).then(() => toast("Copied"), () => toast("Couldn't copy", "error"))}>Copy</button>
-        <a class="btn primary" href=${`/api/deliverables/${doc.id}/download`}>Download</a>
+        <button class="btn primary" onClick=${() => saveBlob(new Blob([doc.markdown], { type: "text/markdown" }), `${slugify(doc.title)}.md`)}>Download</button>
       </div>
     <//>`}
   </div>`;
@@ -509,7 +518,7 @@ function MoreModal({ idea, onClose }) {
     <div class="stack tight">
       <button class="btn" onClick=${() => setMerging(true)}>${icon("merge")} Merge another idea into this one</button>
       <button class="btn" onClick=${() => act(() => post(`/api/ideas/${idea.id}/refresh`), "Rebuilding the idea from all recordings").then(onClose)}>${icon("undo")} Rebuild the card from all recordings</button>
-      <a class="btn" href=${`/api/ideas/${idea.id}/export.md`}>${icon("doc")} Download as Markdown</a>
+      <button class="btn" onClick=${() => download(`/api/ideas/${idea.id}/export.md`, `${idea.id}-${slugify(idea.title)}.md`).catch((e) => toast(e.message, "error"))}>${icon("doc")} Download as Markdown</button>
       <button class="btn" onClick=${() => { onClose(); setTimeout(() => window.print(), 100); }}>Print or save as PDF</button>
       ${idea.status !== "archived" && html`<button class="btn danger" onClick=${() => act(() => patch(`/api/ideas/${idea.id}`, { status: "archived" }), "Archived").then(onClose)}>${icon("archive")} Archive</button>`}
     </div>

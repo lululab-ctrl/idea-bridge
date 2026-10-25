@@ -1,0 +1,7 @@
+# Supabase CLI project settings (used by `supabase functions deploy`).
+project_id = "idea-bridge"
+
+[functions.api]
+# The app does its own sign-in (two people, long-lived sessions), so the
+# platform's JWT check is turned off for this function.
+verify_jwt = false

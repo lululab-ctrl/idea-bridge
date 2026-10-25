@@ -39,7 +39,9 @@ export function Dashboard({ me }) {
     </div>
 
     ${ai && !ai.understanding && html`<div class="banner warn">${icon("bolt")}<div class="grow"><b>AI understanding is not set up yet.</b> Recordings are saved safely and will be processed once the Anthropic API key is added on the server. See Settings → System.</div></div>`}
-    ${ai && !ai.transcription && html`<div class="banner warn">${icon("mic")}<div class="grow"><b>Transcription is not set up yet.</b> Add an ElevenLabs or OpenAI API key on the server. Recordings wait safely until then.</div></div>`}
+    ${ai && !ai.transcription && html`<div class="banner warn">${icon("mic")}<div class="grow"><b>Transcription is not set up yet.</b> Add the free Groq API key on the server (see the README). Recordings wait safely until then.</div></div>`}
+    ${d.budget?.exhausted && html`<div class="banner warn">${icon("bolt")}<div class="grow"><b>This month's AI budget is used up</b> ($${d.budget.spent.toFixed(2)} of $${d.budget.budget}). New recordings are saved and will be processed next month, or raise the budget in Settings.</div><a class="btn small" href="#/settings">Settings</a></div>`}
+    ${d.waitingJobs?.length > 0 && !d.budget?.exhausted && html`<div class="banner">${icon("bolt")}<div class="grow small"><b>Some work is waiting to retry</b> (usually a free-plan limit that resets soon): ${d.waitingJobs[0].last_error}</div></div>`}
     ${d.failed > 0 && html`<div class="banner bad">${icon("x")}<div class="grow">${d.failed} recording${d.failed > 1 ? "s" : ""} couldn't be processed. The audio is safe.</div><a class="btn small" href="#/recordings?status=failed">See and retry</a></div>`}
 
     <div class="grid two">

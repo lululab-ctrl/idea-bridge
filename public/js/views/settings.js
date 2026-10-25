@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { act, ago, api, del, ErrorBox, get, html, icon, Loading, Modal, patch, post, toast, useData, useRoute, when } from "../lib.js";
+import { act, ago, api, del, download, ErrorBox, get, html, icon, Loading, Modal, patch, post, toast, useData, useRoute, when, setToken } from "../lib.js";
 import { enablePush, isStandalone, pushSupported } from "../push.js";
 
 export function Settings({ me }) {
@@ -26,7 +26,7 @@ export function Settings({ me }) {
     <${System} />
     <div class="card row between">
       <span class="small muted">Signed in as ${me.name}</span>
-      <button class="btn" onClick=${async () => { await post("/api/logout"); location.hash = ""; location.reload(); }}>Sign out</button>
+      <button class="btn" onClick=${async () => { await post("/api/logout").catch(() => {}); setToken(null); location.hash = ""; location.reload(); }}>Sign out</button>
     </div>
   </div>`;
 }
@@ -135,9 +135,11 @@ function Teach() {
 function Preferences() {
   const { data } = useData("/api/settings");
   const [f, setF] = useState(null);
-  useEffect(() => data && setF({ output_language: data.output_language, timezone: data.timezone, digest_hour: data.digest_hour }), [data]);
+  useEffect(() => data && setF({ output_language: data.output_language, timezone: data.timezone, digest_hour: data.digest_hour, ai_budget_usd: data.ai_budget_usd }), [data]);
   if (!f) return null;
-  const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [f.timezone];
+  const known = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  // Some browsers leave aliases such as "UTC" out of the list; always show the saved zone.
+  const zones = f.timezone && !known.includes(f.timezone) ? [f.timezone, ...known] : known;
   return html`<div class="card stack">
     <h2>Preferences</h2>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
@@ -145,6 +147,8 @@ function Preferences() {
         <select value=${f.output_language} onChange=${(e) => setF({ ...f, output_language: e.target.value })}>${["English", "Hebrew", "Spanish", "French", "German", "Russian", "Arabic", "Portuguese"].map((l) => html`<option value=${l}>${l}</option>`)}</select></label>
       <label class="field">Time zone<span class="hint">For digests and due dates.</span>
         <select value=${f.timezone} onChange=${(e) => setF({ ...f, timezone: e.target.value })}>${zones.map((z) => html`<option value=${z}>${z}</option>`)}</select></label>
+      <label class="field">Monthly AI budget (USD)<span class="hint">Keeps Claude inside the Team plan's free API credits ($20 per Standard seat). 0 = no cap.</span>
+        <input type="number" min="0" max="500" step="1" value=${f.ai_budget_usd} onInput=${(e) => setF({ ...f, ai_budget_usd: Number(e.target.value) })} /></label>
       <label class="field">Digest time<span class="hint">Daily digest and reminders.</span>
         <select value=${f.digest_hour} onChange=${(e) => setF({ ...f, digest_hour: Number(e.target.value) })}>${Array.from({ length: 24 }, (_, h) => html`<option value=${h}>${String(h).padStart(2, "0")}:00</option>`)}</select></label>
     </div>
@@ -169,31 +173,51 @@ function Notifications({ me, vapid }) {
 
 function System() {
   const { data, error, reload } = useData("/api/system");
+  const [exporting, setExporting] = useState(false);
   if (!data) return error ? html`<${ErrorBox} error=${error} retry=${reload} />` : null;
   const month = new Date().toISOString().slice(0, 7);
   const thisMonth = data.usage.filter((u) => u.month === month);
-  const cost = thisMonth.reduce((n, u) => n + u.cost, 0);
   const minutes = thisMonth.reduce((n, u) => n + (u.audio_minutes ?? 0), 0);
-  const ok = (v) => html`<span class="chip ${v ? "st st-approved" : "st st-needs_clarification"}">${v ? "Working" : "Not set up"}</span>`;
+  const ok = (v, label = "Working") => html`<span class="chip ${v ? "st st-approved" : "st st-needs_clarification"}">${v ? label : "Not set up"}</span>`;
+  const mb = (b) => `${(b / 1024 / 1024).toFixed(0)} MB`;
+  const storagePct = Math.min(100, Math.round((data.storage.used / data.storage.limit) * 100));
+  const budgetPct = data.budget.budget ? Math.min(100, Math.round((data.budget.spent / data.budget.budget) * 100)) : 0;
+  const exportAll = async () => {
+    setExporting(true);
+    try {
+      await download("/api/export", `idea-bridge-export-${new Date().toISOString().slice(0, 10)}.zip`);
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      setExporting(false);
+    }
+  };
   return html`<div class="card stack">
     <h2>System</h2>
     <div class="stack tight small">
-      <div class="row between"><span>AI understanding (Claude, ${data.ai.model})</span>${ok(data.ai.understanding)}</div>
-      <div class="row between"><span>Transcription${data.ai.transcription ? ` (${data.ai.transcription}${data.ai.transcriptionBackup ? " + OpenAI backup" : ""})` : ""}</span>${ok(!!data.ai.transcription)}</div>
-      <div class="row between"><span>Search by meaning</span>${ok(data.ai.semanticSearch)}</div>
-      <div class="row between"><span>Email</span>${ok(data.email)}</div>
-      <div class="row between"><span>Off-site backup</span>${ok(data.offsiteBackup)}</div>
-      ${data.ai.mode === "mock" && html`<div class="banner warn"><div class="grow">Test mode: AI responses are simulated. Set AI_MODE=live on the server for real use.</div></div>`}
+      <div class="row between"><span>AI understanding (Claude: ${data.ai.model} daily, ${data.ai.deepModel} for reports)</span>${ok(data.ai.understanding)}</div>
+      <div class="row between"><span>Transcription (Groq, free plan)</span>${ok(!!data.ai.transcription)}</div>
+      <div class="row between"><span>Email digests (Resend, optional)</span>${ok(data.email)}</div>
+      <div class="row between"><span>Background worker</span>${data.lastWorker ? html`<span class="tiny muted">last ran ${ago(data.lastWorker.at)}</span>` : html`<span class="chip st st-needs_clarification">Not run yet</span>`}</div>
+      ${data.ai.mode === "mock" && html`<div class="banner warn"><div class="grow">Test mode: AI responses are simulated.</div></div>`}
     </div>
     <div class="divider"></div>
+    <div class="stack tight">
+      <div class="row between"><span class="label">Claude this month (paid from the Team plan's API credits)</span><span class="small num">$${data.budget.spent.toFixed(2)} of $${data.budget.budget}</span></div>
+      <div class="progress"><i style=${`width:${budgetPct}%;${budgetPct > 85 ? "background:var(--warn)" : ""}`}></i></div>
+      ${data.budget.exhausted && html`<div class="banner warn"><div class="grow small">This month's budget is used up. New recordings are saved and will be processed next month, or raise the budget under Preferences.</div></div>`}
+      <div class="row between" style="margin-top:6px"><span class="label">Storage (Supabase free plan)</span><span class="small num">${mb(data.storage.used)} of ${mb(data.storage.limit)}</span></div>
+      <div class="progress"><i style=${`width:${storagePct}%;${storagePct > 85 ? "background:var(--warn)" : ""}`}></i></div>
+      <div class="tiny muted">When storage gets close to full, the audio of the oldest recordings is removed automatically. Their transcripts, quotes and ideas are always kept.</div>
+    </div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-      <div><div class="label">AI cost this month</div><div class="strong num">$${cost.toFixed(2)}</div></div>
       <div><div class="label">Audio this month</div><div class="strong num">${minutes.toFixed(0)} min</div></div>
       <div><div class="label">Recordings</div><div class="strong num">${data.counts.recordings}</div></div>
       <div><div class="label">Ideas</div><div class="strong num">${data.counts.ideas}</div></div>
-      <div><div class="label">Audio stored</div><div class="strong num">${(data.counts.audio_bytes / 1e6).toFixed(0)} MB</div></div>
+      <div><div class="label">Waiting jobs</div><div class="strong num">${data.pendingJobs}</div></div>
     </div>
-    ${thisMonth.length > 0 && html`<details><summary class="small muted">Cost breakdown</summary>
+    ${data.waiting.length > 0 && html`<div class="stack tight"><div class="label">Waiting to retry</div>${data.waiting.map((w) => html`<div class="small">${w.type.replace(/_/g, " ")}: ${w.last_error} <span class="tiny muted">· next try ${ago(w.run_at).replace(" ago", "")}</span></div>`)}</div>`}
+    ${thisMonth.length > 0 && html`<details><summary class="small muted">Usage breakdown</summary>
       <div style="overflow-x:auto"><table class="small" style="border-collapse:collapse;width:100%;margin-top:8px">
         <tr class="muted"><td>What</td><td>Service</td><td class="num">Calls</td><td class="num">Cost</td></tr>
         ${thisMonth.map((u) => html`<tr><td>${u.purpose}</td><td>${u.provider}</td><td class="num">${u.calls}</td><td class="num">$${u.cost.toFixed(3)}</td></tr>`)}
@@ -206,13 +230,12 @@ function System() {
     <div class="divider"></div>
     <div class="stack tight">
       <div class="label">Your data</div>
-      <div class="small">Last backup: ${data.lastBackup ? `${when(data.lastBackup.at)}${data.lastBackup.offsite ? " (copied off-site)" : " (on the server)"}` : "not yet (runs nightly at 3:00)"}</div>
+      <div class="small">The database is backed up every night by GitHub (kept 30 days). See the README for how to restore.</div>
       <div class="row">
         <a class="btn small" href="#/trash">${icon("archive")} Trash</a>
-        <button class="btn small" onClick=${() => act(() => post("/api/backup"), "Backup complete")}>Back up now</button>
-        <a class="btn small" href="/api/export">Download everything (.zip)</a>
+        <button class="btn small" disabled=${exporting} onClick=${exportAll}>${exporting ? "Preparing…" : "Download everything (.zip)"}</button>
       </div>
-      <p class="tiny muted">The download includes every recording, transcript, idea (as readable documents), file and the full database. Nothing is locked in.</p>
+      <p class="tiny muted">The download has every idea as a readable document, every transcript, all generated documents and a full data file. Audio can be played and downloaded from each recording.</p>
     </div>
   </div>`;
 }

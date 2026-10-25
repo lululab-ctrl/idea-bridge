@@ -1,0 +1,75 @@
+# Deploys the database changes and the API to Supabase (free plan) on every
+# push to main. The web app is built by Cloudflare Pages itself (see README).
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+concurrency: deploy
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["54329:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type check and end-to-end tests
+        working-directory: supabase/functions/api
+        run: |
+          deno task check
+          deno task test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link the project
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: Apply database migrations
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: Set server secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+        run: |
+          set -e
+          args=()
+          for name in ANTHROPIC_API_KEY GROQ_API_KEY WORKER_SECRET APP_URL RESEND_API_KEY MAIL_FROM VAPID_SUBJECT; do
+            value="${!name}"
+            if [ -n "$value" ]; then args+=("$name=$value"); fi
+          done
+          for required in WORKER_SECRET APP_URL; do
+            if [ -z "${!required}" ]; then echo "::error::Missing GitHub secret $required"; exit 1; fi
+          done
+          supabase secrets set --project-ref "$PROJECT_REF" "${args[@]}"
+      - name: Deploy the API function
+        run: supabase functions deploy api --project-ref "$PROJECT_REF" --no-verify-jwt
+      - name: Wake the API (registers the background worker)
+        run: |
+          sleep 5
+          curl -fsS "https://$PROJECT_REF.supabase.co/functions/v1/api/health"

@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { act, ago, clock, del, ErrorBox, go, html, icon, Loading, Modal, playAudio, post, Quote, useData, when } from "../lib.js";
+import { act, ago, clock, del, ErrorBox, go, html, icon, Loading, Modal, playAudio, post, Quote, useData, when, setToken } from "../lib.js";
 
 // The contributor's own space: the ideas his recordings became, and his recordings.
 // Read-only apart from deleting his own recordings (which the admin can restore).
@@ -18,7 +18,7 @@ const STATUS_FOR_HIM = {
 function TopBar({ back = "#/capture", backLabel = "Record" }) {
   return html`<div class="row between" style="margin-bottom:4px">
     <a href=${back} class="small">${icon("back")} ${backLabel}</a>
-    <button class="btn ghost small" onClick=${async () => { await post("/api/logout"); location.hash = ""; location.reload(); }}>Sign out</button>
+    <button class="btn ghost small" onClick=${async () => { await post("/api/logout").catch(() => {}); setToken(null); location.hash = ""; location.reload(); }}>Sign out</button>
   </div>`;
 }
 

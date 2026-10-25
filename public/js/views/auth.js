@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { html, post } from "../lib.js";
+import { html, post, setToken } from "../lib.js";
 
 export function Setup({ onDone }) {
   const [f, setF] = useState({ oName: "", oEmail: "", oPw: "", vName: "", vPw: "" });
@@ -12,11 +12,12 @@ export function Setup({ onDone }) {
     setBusy(true);
     setError("");
     try {
-      await post("/api/setup", {
+      const res = await post("/api/setup", {
         organizer: { name: f.oName, email: f.oEmail, password: f.oPw },
         visionary: { name: f.vName, password: f.vPw },
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
+      setToken(res.token);
       location.hash = "#/settings?welcome=1";
       onDone();
     } catch (err) {
@@ -58,7 +59,8 @@ export function Login({ onDone }) {
     setBusy(true);
     setError("");
     try {
-      await post("/api/login", { name, password: pw });
+      const res = await post("/api/login", { name, password: pw });
+      setToken(res.token);
       onDone();
     } catch (err) {
       setError(err.message);
@@ -76,5 +78,35 @@ export function Login({ onDone }) {
       <button class="btn primary" disabled=${busy}>${busy ? "Signing in…" : "Sign in"}</button>
       <p class="small muted">No password? Ask your partner to open Settings → People and send you a sign-in link.</p>
     </form>
+  </div>`;
+}
+
+// Opened from the QR code / sign-in link. Signing in needs a tap, so link
+// previews in messaging apps can't use up the one-time link.
+export function SignInLink({ token, onDone }) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    try {
+      const res = await post("/api/signin-link", { token });
+      setToken(res.token);
+      location.hash = "";
+      onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return html`<div class="auth">
+    <div class="card" style="text-align:center;align-items:center">
+      <img class="logo" src="/icons/icon-192.png" alt="" />
+      <h1>Idea Bridge</h1>
+      ${error
+        ? html`<div class="banner bad"><div class="grow">${error}</div></div><a class="btn" href="#/">Sign in another way</a>`
+        : html`<p class="muted">Tap below to open your ideas app on this phone.</p>
+            <button class="btn voice" style="min-height:48px;padding:0 28px;font-size:1.05rem" disabled=${busy} onClick=${go}>${busy ? "Opening…" : "Continue"}</button>`}
+    </div>
   </div>`;
 }
