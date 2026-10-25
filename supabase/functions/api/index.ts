@@ -97,6 +97,13 @@ function cors(req: Request): Record<string, string> {
 export async function handle(req: Request): Promise<Response> {
   const t0 = performance.now();
   const fresh = served++ === 0;
+  const marks: string[] = [];
+  let tm = t0;
+  const mark = (name: string) => {
+    const now = performance.now();
+    marks.push(`${name};dur=${Math.round(now - tm)}`);
+    tm = now;
+  };
   const { db, app, router } = init();
   const url = new URL(req.url);
   // Supabase passes "/api/...", other hosts may pass "/functions/v1/api/...".
@@ -108,14 +115,16 @@ export async function handle(req: Request): Promise<Response> {
     for (const [k, v] of Object.entries(corsHeaders)) res.headers.set(k, v);
     res.headers.set(
       "server-timing",
-      `total;dur=${Math.round(performance.now() - t0)}, instance;desc="${fresh ? "new" : "warm"} ${Math.round((t0 - bootedAt) / 1000)}s"`,
+      [`total;dur=${Math.round(performance.now() - t0)}`, `instance;desc="${fresh ? "new" : "warm"} ${Math.round((t0 - bootedAt) / 1000)}s"`, ...(fresh ? [`load;dur=${Math.round(bootedAt)}`] : []), ...marks].join(", "),
     );
     res.headers.set("x-content-type-options", "nosniff");
     return res;
   };
 
   try {
+    mark("init");
     await registerWorker(db);
+    mark("register");
 
     if (path === "/api/_worker" && req.method === "POST") {
       if (req.headers.get("x-worker-secret") !== (await workerSecret(db))) throw new HttpError(403, "Forbidden.");
@@ -143,6 +152,7 @@ export async function handle(req: Request): Promise<Response> {
 
     await loadKeys(db);
     syncAI(app.ai, db);
+    mark("keys");
     const m = router.match(req.method, path);
     if (!m) throw new HttpError(404, "Not found.");
     const user = await userFromRequest(db, req);
@@ -177,7 +187,9 @@ export async function handle(req: Request): Promise<Response> {
     };
     // Make sure the browser's storage handle exists before any file route uses it.
     storage(`${url.origin}/api`);
+    mark("auth");
     const out = await m.route.handler(ctx);
+    mark("route");
     if (user) kick(app);
     return withCors(out instanceof Response ? out : json(out));
   } catch (err) {

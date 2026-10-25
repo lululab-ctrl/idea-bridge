@@ -144,12 +144,43 @@ function Router({ me }) {
   return html`<${Shell} me=${me} route=${route}>${view}<//>`;
 }
 
+// The last known app state (who is signed in) is kept on the device, so the
+// app opens instantly and refreshes in the background. It is only used with
+// the same sign-in it was saved with.
+const STATE_KEY = "ib_state";
+const tokenTag = () => (getToken() ?? "").slice(-12);
+function cachedState() {
+  try {
+    const c = JSON.parse(localStorage.getItem(STATE_KEY) ?? "null");
+    return c && c.tag && c.tag === tokenTag() && c.state?.user ? c.state : null;
+  } catch {
+    return null;
+  }
+}
+function saveState(s) {
+  try {
+    if (s?.user) localStorage.setItem(STATE_KEY, JSON.stringify({ tag: tokenTag(), state: s }));
+    else localStorage.removeItem(STATE_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+// Fades out the splash screen from index.html once there's something to show.
+function hideSplash() {
+  const el = document.getElementById("splash");
+  if (!el || el.classList.contains("gone")) return;
+  el.classList.add("gone");
+  setTimeout(() => el.remove(), 300);
+}
+
 function App() {
-  const [state, setState] = useState(null);
+  const [state, setState] = useState(cachedState);
   const [error, setError] = useState(null);
   const load = () =>
     get("/api/state")
       .then((s) => {
+        saveState(s);
         setState(s);
         setError(null);
       })
@@ -167,12 +198,17 @@ function App() {
     }
   }, [state?.user?.id]);
 
+  const loading = !state && !error && !(parseHash().parts[0] === "signin");
+  useEffect(() => {
+    if (!loading) hideSplash();
+  }, [loading]);
+
   if (error && !state) {
     return html`<div class="auth"><div class="card"><h2>Can't reach Idea Bridge</h2><p class="muted">${error}</p><button class="btn primary" onClick=${load}>Try again</button></div></div>`;
   }
   const hashParts = parseHash().parts;
   if (hashParts[0] === "signin" && hashParts[1]) return html`<${SignInLink} token=${hashParts[1]} onDone=${load} />`;
-  if (!state) return html`<div class="boot">Idea Bridge</div>`;
+  if (!state) return null; // the splash screen is still showing
   if (state.setupNeeded) return html`<${Setup} onDone=${load} />`;
   if (!state.user) return html`<${Login} onDone=${load} />`;
   if (state.user.role === "visionary") return html`<${ContributorRouter} me=${state.user} />`;
