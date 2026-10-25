@@ -117,7 +117,11 @@ export class ClaudeLLM implements LLM {
       }
       if (err instanceof Anthropic.BadRequestError) {
         if (/credit balance/i.test(err.message)) {
-          throw new AIError("The Claude API credits for this month are used up. Processing resumes when the next monthly credits arrive.", true, 6 * 3600);
+          throw new AIError(
+            "The Claude account behind this key has no credit. Make sure the Team plan's API credits are claimed for the same Console organization the key was made in, then tap “Try again now”.",
+            true,
+            6 * 3600,
+          );
         }
         throw new AIError(`Claude rejected the request: ${err.message}`, false);
       }

@@ -246,6 +246,7 @@ Deno.test({
         ["POST", "/api/ask", { question: "x" }],
         ["GET", "/api/system"],
         ["GET", "/api/keys"],
+        ["POST", "/api/jobs/retry-waiting"],
         ["PUT", "/api/keys/groq", { value: "gsk_x" }],
       ] as [string, string, unknown?][]) {
         await call(m, u, b, him, 403);
@@ -363,6 +364,7 @@ Deno.test({
       const all = Object.values(files).map((f) => strFromU8(f)).join("\n");
       assertEquals(all.includes("gsk_secret_value_9876"), false);
       assertEquals(all.includes("test-secret"), false);
+      assertEquals((await call("POST", "/api/jobs/retry-waiting")).ok, true);
       k = await call("PUT", "/api/keys/groq", { value: "" });
       assertEquals(k.groq.set, false);
     });

@@ -287,7 +287,7 @@ function System() {
       <div><div class="label">Ideas</div><div class="strong num">${data.counts.ideas}</div></div>
       <div><div class="label">Waiting jobs</div><div class="strong num">${data.pendingJobs}</div></div>
     </div>
-    ${data.waiting.length > 0 && html`<div class="stack tight"><div class="label">Waiting to retry</div>${data.waiting.map((w) => html`<div class="small">${w.type.replace(/_/g, " ")}: ${w.last_error} <span class="tiny muted">· next try ${ago(w.run_at).replace(" ago", "")}</span></div>`)}</div>`}
+    ${data.waiting.length > 0 && html`<div class="stack tight"><div class="row between"><div class="label">Waiting to retry</div><button class="btn small" onClick=${() => act(() => post("/api/jobs/retry-waiting"), "Trying again…")}>Try again now</button></div>${data.waiting.map((w) => html`<div class="small">${w.type.replace(/_/g, " ")}: ${w.last_error} <span class="tiny muted">· next try ${ago(w.run_at).replace(" ago", "")}</span></div>`)}</div>`}
     ${thisMonth.length > 0 && html`<details><summary class="small muted">Usage breakdown</summary>
       <div style="overflow-x:auto"><table class="small" style="border-collapse:collapse;width:100%;margin-top:8px">
         <tr class="muted"><td>What</td><td>Service</td><td class="num">Calls</td><td class="num">Cost</td></tr>

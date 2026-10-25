@@ -555,6 +555,13 @@ export function coreRoutes(r: Router, app: App) {
     };
   });
 
+  // Runs everything that is waiting (e.g. after fixing a key or credits) now.
+  r.post("/api/jobs/retry-waiting", async (c) => {
+    await c.db.run("UPDATE jobs SET run_at = now_text() WHERE status = 'pending' AND run_at > now_text()");
+    c.waitUntil?.(app.jobs.drain(90_000));
+    return { ok: true };
+  });
+
   r.post("/api/jobs/:id/retry", async (c) => {
     const job = await c.db.get<{ type: string; payload: string }>("SELECT type, payload FROM jobs WHERE id = ? AND status = 'failed'", idParam(c));
     if (!job) throw new HttpError(404, "Nothing to retry.");
