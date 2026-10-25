@@ -253,7 +253,7 @@ function System() {
     <h2>System</h2>
     <div class="stack tight small">
       <div class="row between"><span>AI understanding (Claude: ${data.ai.model} daily, ${data.ai.deepModel} for reports)</span>${ok(data.ai.understanding)}</div>
-      <div class="row between"><span>Transcription (Groq, free plan)</span>${ok(!!data.ai.transcription)}</div>
+      <div class="row between"><span>Transcription (Groq)</span>${ok(!!data.ai.transcription)}</div>
       <div class="row between"><span>Email digests (Resend, optional)</span>${ok(data.email)}</div>
       <div class="row between"><span>Background worker</span>${data.lastWorker ? html`<span class="tiny muted">last ran ${ago(data.lastWorker.at)}</span>` : html`<span class="chip st st-needs_clarification">Not run yet</span>`}</div>
       ${data.ai.mode === "mock" && html`<div class="banner warn"><div class="grow">Test mode: AI responses are simulated.</div></div>`}
@@ -263,7 +263,7 @@ function System() {
       <div class="row between"><span class="label">Claude this month (paid from the Team plan's API credits)</span><span class="small num">$${data.budget.spent.toFixed(2)} of $${data.budget.budget}</span></div>
       <div class="progress"><i style=${`width:${budgetPct}%;${budgetPct > 85 ? "background:var(--warn)" : ""}`}></i></div>
       ${data.budget.exhausted && html`<div class="banner warn"><div class="grow small">This month's budget is used up. New recordings are saved and will be processed next month, or raise the budget under Preferences.</div></div>`}
-      <div class="row between" style="margin-top:6px"><span class="label">Storage (Supabase free plan)</span><span class="small num">${mb(data.storage.used)} of ${mb(data.storage.limit)}</span></div>
+      <div class="row between" style="margin-top:6px"><span class="label">Storage (Supabase)</span><span class="small num">${mb(data.storage.used)} of ${mb(data.storage.limit)}</span></div>
       <div class="progress"><i style=${`width:${storagePct}%;${storagePct > 85 ? "background:var(--warn)" : ""}`}></i></div>
       <div class="tiny muted">When storage gets close to full, the audio of the oldest recordings is removed automatically. Their transcripts, quotes and ideas are always kept.</div>
     </div>

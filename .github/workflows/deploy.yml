@@ -77,7 +77,15 @@ jobs:
       - name: Apply database changes
         run: deno run -A --node-modules-dir=none scripts/ops.ts migrate
       - name: Set server settings
-        run: deno run -A --node-modules-dir=none scripts/ops.ts secrets "APP_URL=$APP_URL"
+        run: |
+          # Paid plans include 100 GB of file storage; the free plan has 1 GB.
+          plan=$(deno run -A --node-modules-dir=none scripts/ops.ts plan || echo unknown)
+          case "$plan" in
+            free|unknown) limit=900 ;;
+            *) limit=90000 ;;
+          esac
+          echo "Supabase plan: $plan, storage limit: $limit MB"
+          deno run -A --node-modules-dir=none scripts/ops.ts secrets "APP_URL=$APP_URL" "STORAGE_LIMIT_MB=$limit"
       - uses: supabase/setup-cli@v1
         with:
           version: latest

@@ -4,6 +4,7 @@
 //   deno run -A --node-modules-dir=none scripts/ops.ts secrets NAME=value set function secrets
 //   deno run -A --node-modules-dir=none scripts/ops.ts backup out.json    every table as JSON
 //   deno run -A --node-modules-dir=none scripts/ops.ts restore in.json    put a backup back (replaces current data)
+//   deno run -A --node-modules-dir=none scripts/ops.ts plan               print the project's Supabase plan
 //
 // Environment: SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF talk to Supabase's
 // Management API. For local testing, DATABASE_URL talks to Postgres directly.
@@ -150,12 +151,23 @@ async function restore(file: string) {
   console.log(`Restored ${order.length} tables from ${file}.`);
 }
 
+// The plan of the organization that owns the project ("free", "pro", "team", ...).
+async function plan() {
+  const project = (await management("GET", "")) as { organization_id?: string; organization_slug?: string };
+  const org = project.organization_slug ?? project.organization_id;
+  const res = await fetch(`https://api.supabase.com/v1/organizations/${org}`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Couldn't read the organization (${res.status}).`);
+  const info = (await res.json()) as { plan?: string };
+  console.log(info.plan ?? "unknown");
+}
+
 const [cmd, ...args] = Deno.args;
 try {
   if (cmd === "migrate") await migrate();
   else if (cmd === "secrets") await secrets(args);
   else if (cmd === "backup") await backup(args[0] ?? "idea-bridge-backup.json");
   else if (cmd === "restore") await restore(args[0]);
+  else if (cmd === "plan") await plan();
   else {
     console.error("Usage: ops.ts migrate | secrets NAME=value… | backup FILE | restore FILE");
     Deno.exit(2);
