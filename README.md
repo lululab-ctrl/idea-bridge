@@ -56,7 +56,7 @@ Every service runs on a free plan that needs **no credit card**, so nothing can 
 |---|---|---|
 | Understanding (Claude) | Anthropic API, paid from the **monthly API credits included in your Claude Team plan** | Team plans include API credits each month ($20 per Standard seat). No payment method is attached, so when the credits run out requests simply stop until next month. The app also has its own monthly cap (default $18), so it never uses everything. |
 | Transcription | **Groq** free plan (Whisper large-v3) | Free with no card. Hebrew, English and mixed speech. |
-| Database, file storage, server | **Supabase** free plan | 500 MB database, 1 GB files, server functions and a scheduler. No card. |
+| Database, file storage, server | **Supabase** (your existing paid subscription) | Already paid for: database, 100 GB of files, server functions and a scheduler. Nothing extra for this app. The app also works on Supabase's free plan (see the note in `.github/workflows/deploy.yml`). |
 | Web app | **GitHub Pages** | Free for this repository. No card. |
 | Deploys and nightly backups | **GitHub Actions** | Free for public repositories. |
 | Email digests (optional) | **Resend** free plan | 3,000 emails a month. Push notifications work without it. |
@@ -158,9 +158,8 @@ Brainstorms never turn into obligations by themselves. Only **Approve** creates 
 |---|---|---|
 | **Claude credits / the app's monthly budget** (default $18) | New recordings are saved and transcribed; understanding waits until the 1st of next month. A banner shows on Today. | Raise **Settings → Preferences → Monthly AI budget** if the Team plan has credits left. |
 | **Groq daily transcription limit** (free plan, roughly hours of audio per day) | Recordings wait and are transcribed automatically when the limit resets. | Nothing; it catches up by itself. |
-| **1 GB of file storage** | At 90% full, the audio of the oldest processed recordings is removed (down to 75%). Transcripts, quotes, ideas and reports are always kept. | Download recordings you want to keep forever from their page. |
+| **File storage** (set to 90 GB, within the 100 GB your Supabase plan includes) | At 90% full, the audio of the oldest processed recordings is removed (down to 75%). Transcripts, quotes, ideas and reports are always kept. | Download recordings you want to keep forever from their page. |
 | **500 MB database** | Text is small; this is many years of ideas. | – |
-| **Supabase pauses projects after 7 days without use** | The nightly backup also keeps the project awake. If it ever pauses, open the Supabase dashboard and click *Restore*. | – |
 | **Server functions run at most 150 seconds per call** | Work is split into small steps, so long recordings are fine (up to 25 MB, about 2 hours at the app's recording quality). | – |
 
 **Settings → System** shows Claude usage, storage use, when the background worker last ran and anything waiting to retry.
@@ -264,7 +263,7 @@ Researched on 25 October 2026. Free plans change, so check the providers' pages 
 
 **Goal: genuinely free, no card, maintainable.** Options were rejected when they need a payment method, are trials, sleep in a way that stops background work, or need a computer that's always on.
 
-- **Supabase** (chosen): database, file storage, server functions and a scheduler in one free plan, no card. Trade-offs: 1 GB of files, no automatic backups (covered by the nightly GitHub backup), pauses after a week unused (covered by the nightly run).
+- **Supabase** (chosen): database, file storage, server functions and a scheduler in one service. You already pay for it; it also runs on the free plan (1 GB of files, no automatic backups, pauses after a week unused, all handled by the app and the nightly backup).
 - **Keys entered in the app** rather than on GitHub, so setup needs only one token on GitHub. They're stored in the database, which only the server can read, and are never sent back to the browser or included in exports.
 - **GitHub Pages** (chosen) for the web app: free for a public repository, no extra account. (Supabase can't serve web pages on its free domain.) The code is public; your data is not, it lives only in Supabase.
 - Rejected for hosting: Oracle Cloud free tier (needs a card), Northflank (needs a payment method), Render / Koyeb / Fly.io / Railway / Hugging Face Spaces (sleep, no persistent disk, or not free).

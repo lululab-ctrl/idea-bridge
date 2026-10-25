@@ -14,6 +14,9 @@ concurrency: deploy
 env:
   PROJECT_REF: mhfiboimwscurahprugu
   APP_URL: https://lululab-ctrl.github.io/idea-bridge
+  # The project is on a paid Supabase plan (100 GB of files included). On the
+  # free plan (1 GB) set this to 900.
+  STORAGE_LIMIT_MB: 90000
 
 jobs:
   test:
@@ -77,15 +80,7 @@ jobs:
       - name: Apply database changes
         run: deno run -A --node-modules-dir=none scripts/ops.ts migrate
       - name: Set server settings
-        run: |
-          # Paid plans include 100 GB of file storage; the free plan has 1 GB.
-          plan=$(deno run -A --node-modules-dir=none scripts/ops.ts plan || echo unknown)
-          case "$plan" in
-            free|unknown) limit=900 ;;
-            *) limit=90000 ;;
-          esac
-          echo "Supabase plan: $plan, storage limit: $limit MB"
-          deno run -A --node-modules-dir=none scripts/ops.ts secrets "APP_URL=$APP_URL" "STORAGE_LIMIT_MB=$limit"
+        run: deno run -A --node-modules-dir=none scripts/ops.ts secrets "APP_URL=$APP_URL" "STORAGE_LIMIT_MB=$STORAGE_LIMIT_MB"
       - uses: supabase/setup-cli@v1
         with:
           version: latest
