@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { config } from "./config.ts";
 import type { DB } from "./db.ts";
