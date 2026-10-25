@@ -15,6 +15,10 @@ import { localStorageImpl, storage } from "./lib/storage.ts";
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
+// Timing, reported in the Server-Timing header to find slow spots.
+const bootedAt = performance.now();
+let served = 0;
+
 let state: { db: DB; app: App; router: Router } | null = null;
 function init() {
   if (state) return state;
@@ -83,7 +87,7 @@ function cors(req: Request): Record<string, string> {
         "access-control-allow-origin": origin,
         "access-control-allow-headers": "authorization, content-type, x-ideabridge, x-upsert",
         "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "access-control-expose-headers": "content-disposition",
+        "access-control-expose-headers": "content-disposition, server-timing",
         "access-control-max-age": "86400",
         vary: "origin",
       }
@@ -91,6 +95,8 @@ function cors(req: Request): Record<string, string> {
 }
 
 export async function handle(req: Request): Promise<Response> {
+  const t0 = performance.now();
+  const fresh = served++ === 0;
   const { db, app, router } = init();
   const url = new URL(req.url);
   // Supabase passes "/api/...", other hosts may pass "/functions/v1/api/...".
@@ -100,6 +106,10 @@ export async function handle(req: Request): Promise<Response> {
 
   const withCors = (res: Response) => {
     for (const [k, v] of Object.entries(corsHeaders)) res.headers.set(k, v);
+    res.headers.set(
+      "server-timing",
+      `total;dur=${Math.round(performance.now() - t0)}, instance;desc="${fresh ? "new" : "warm"} ${Math.round((t0 - bootedAt) / 1000)}s"`,
+    );
     res.headers.set("x-content-type-options", "nosniff");
     return res;
   };
