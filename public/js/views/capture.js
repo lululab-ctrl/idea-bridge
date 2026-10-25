@@ -133,12 +133,13 @@ export function Capture({ me }) {
   const waiting = outbox.filter((o) => !o.failed);
   const failed = outbox.filter((o) => o.failed);
   const firstName = me?.name?.split(" ")[0] ?? "";
+  const isContributor = me?.role === "visionary";
 
   return html`<div class="capture">
     <div class="capture-top">
-      <a href="#/today">${me?.role === "visionary" ? "Ideas & plans" : "← Workspace"}</a>
+      ${isContributor ? html`<a href="#/mine">Your ideas</a>` : html`<a href="#/today">← Workspace</a>`}
       <span style="opacity:.7">Idea Bridge</span>
-      <a href="#/settings">Settings</a>
+      ${isContributor ? html`<a href="#/mine/recordings">Recordings</a>` : html`<a href="#/settings">Settings</a>`}
     </div>
 
     <div class="capture-center">
@@ -226,7 +227,7 @@ export function Capture({ me }) {
                   : r.status === "analyzing"
                     ? "Understanding…"
                     : "Queued…";
-        return html`<a class="r" href=${`#/recordings/${r.id}`} key=${r.id} style="text-decoration:none"><span class="dot ${cls}"></span><span class="t">${label}</span><span class="tiny" style="opacity:.6">${ago(r.captured_at)}</span></a>`;
+        return html`<a class="r" href=${isContributor ? `#/mine/recordings/${r.id}` : `#/recordings/${r.id}`} key=${r.id} style="text-decoration:none"><span class="dot ${cls}"></span><span class="t">${label}</span><span class="tiny" style="opacity:.6">${ago(r.captured_at)}</span></a>`;
       })}
     </div>`}
   </div>`;

@@ -9,6 +9,7 @@ const KINDS = {
   conflict: "Possible conflict",
   answer: "Question answered",
   plan: "Plan ready",
+  recording_deleted: "Recording deleted",
 };
 
 // Each kind of item gets the actions that make sense for it; the first is the default.
@@ -37,6 +38,11 @@ function actionsFor(item, him) {
       return [
         { a: "confirm", label: item.kind === "conflict" ? "Yes, they conflict" : "Yes, connect them", key: "y", primary: true },
         { a: "dismiss", label: "No", key: "n" },
+      ];
+    case "recording_deleted":
+      return [
+        { a: "ok", label: "Fine, keep it deleted", key: "k", primary: true, hint: "Stays in the trash; ideas are unchanged" },
+        { a: "restore", label: "Restore the recording", key: "r" },
       ];
     default:
       return [{ a: "ok", label: "Got it", key: "k", primary: true }];

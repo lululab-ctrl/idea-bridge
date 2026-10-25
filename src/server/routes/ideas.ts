@@ -24,6 +24,7 @@ import {
 } from "../ideas.js";
 import { notifyRole } from "../notify.js";
 import { scheduleReportAndScore } from "../pipeline.js";
+import { moveToTrash, restoreRecording } from "../trash.js";
 import { indexIdea, safeJson, search } from "../search.js";
 import { defaultWeights, sendFileWithRange, slug } from "./core.js";
 
@@ -142,6 +143,7 @@ export async function ideaRoutes(app: FastifyInstance, ctx: Ctx) {
       .prepare(
         `SELECT f.id, f.recording_id, f.title, f.quote, f.start_sec, f.end_sec, f.summary, f.interpretation, f.kind, f.commitment,
            f.clarity, f.link_decision, f.answers_question, r.captured_at, r.kind AS recording_kind, r.audio_path IS NOT NULL AS has_audio,
+           r.deleted_at AS recording_deleted_at,
            u.name AS speaker
          FROM fragments f JOIN recordings r ON r.id = f.recording_id LEFT JOIN users u ON u.id = r.user_id
          WHERE f.idea_id = ? ORDER BY r.captured_at DESC, f.position`,
@@ -389,7 +391,8 @@ export async function ideaRoutes(app: FastifyInstance, ctx: Ctx) {
 
   app.delete("/api/notes/:id", async (req) => {
     const me = requireUser(req);
-    db.prepare("DELETE FROM notes WHERE id = ? AND user_id = ?").run(idParam(req), me.id);
+    const note = db.prepare("SELECT user_id FROM notes WHERE id = ?").get(idParam(req)) as { user_id: number } | undefined;
+    if (note) moveToTrash(db, "note", idParam(req), me.id);
     return { ok: true };
   });
 
@@ -446,11 +449,7 @@ export async function ideaRoutes(app: FastifyInstance, ctx: Ctx) {
 
   app.delete("/api/attachments/:id", async (req) => {
     const me = requireUser(req);
-    const a = db.prepare("SELECT path, idea_id FROM attachments WHERE id = ?").get(idParam(req)) as { path: string | null; idea_id: number } | undefined;
-    if (!a) throw new HttpError(404, "Attachment not found.");
-    db.prepare("DELETE FROM attachments WHERE id = ?").run(idParam(req));
-    if (a.path && fs.existsSync(a.path)) fs.unlinkSync(a.path);
-    logActivity(db, me.id, "delete_attachment", "idea", a.idea_id);
+    if (!moveToTrash(db, "attachment", idParam(req), me.id)) throw new HttpError(404, "Attachment not found.");
     return { ok: true };
   });
 
@@ -513,8 +512,8 @@ export async function ideaRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   app.delete("/api/deliverables/:id", async (req) => {
-    requireUser(req);
-    db.prepare("DELETE FROM deliverables WHERE id = ?").run(idParam(req));
+    const me = requireUser(req);
+    moveToTrash(db, "deliverable", idParam(req), me.id);
     return { ok: true };
   });
 
@@ -556,7 +555,7 @@ export async function ideaRoutes(app: FastifyInstance, ctx: Ctx) {
     const rid = idParam(req);
     const action = String((req.body as { action?: string }).action ?? "");
     const item = db.prepare("SELECT * FROM review_items WHERE id = ?").get(rid) as
-      | { id: number; kind: string; idea_id: number | null; other_idea_id: number | null; fragment_id: number | null; link_id: number | null; status: string }
+      | { id: number; kind: string; idea_id: number | null; other_idea_id: number | null; fragment_id: number | null; link_id: number | null; recording_id: number | null; status: string }
       | undefined;
     if (!item) throw new HttpError(404, "Item not found.");
     if (item.status !== "open") return { ok: true };
@@ -595,6 +594,13 @@ export async function ideaRoutes(app: FastifyInstance, ctx: Ctx) {
         if (ideaId && item.other_idea_id) {
           if (item.link_id) db.prepare("UPDATE links SET status = 'dismissed' WHERE id = ?").run(item.link_id);
           addLink(db, ideaId, item.other_idea_id, "related", { status: "confirmed", by: "user" });
+        }
+        break;
+      case "restore":
+        if (item.recording_id) {
+          restoreRecording(db, item.recording_id, me.id);
+          const r = db.prepare("SELECT status, purged_at FROM recordings WHERE id = ?").get(item.recording_id) as { status: string; purged_at: string | null } | undefined;
+          if (r && !r.purged_at && !["done", "failed"].includes(r.status)) jobs.enqueue("process_recording", { recordingId: item.recording_id });
         }
         break;
       case "dismiss":

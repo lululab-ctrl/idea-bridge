@@ -298,7 +298,7 @@ function Words({ idea, him }) {
     <div class="card flush">
       ${idea.fragments.map((f) => html`<div class="frag" key=${f.id}>
         <div class="row between">
-          <span class="small strong">${when(f.captured_at)}${f.answers_question ? " · answer to your question" : ""}</span>
+          <span class="small strong">${when(f.captured_at)}${f.answers_question ? " · answer to your question" : ""}${f.recording_deleted_at ? html` <span class="chip" title="The recording is in the trash; his words are kept here">recording deleted</span>` : ""}</span>
           <div class="row">
             ${f.has_audio ? html`<button class="play" onClick=${() => playAudio(f.recording_id, f.start_sec ?? 0)}>${icon("play")} Listen${f.start_sec != null ? ` from ${clock(f.start_sec)}` : ""}</button>` : html`<span class="chip">Typed</span>`}
             <a class="btn ghost small" href=${`#/recordings/${f.recording_id}`}>Full recording</a>
@@ -406,7 +406,7 @@ function Work({ idea, people }) {
         ${icon(a.kind === "link" ? "link" : "doc")}
         <a class="grow" href=${a.kind === "link" ? a.url : `/api/attachments/${a.id}/file`} target="_blank" rel="noopener noreferrer">${a.name}</a>
         <span class="tiny muted">${a.user_name ?? ""}</span>
-        <button class="btn ghost small" aria-label="Remove" onClick=${() => act(() => del(`/api/attachments/${a.id}`), "Removed")}>${icon("x")}</button>
+        <button class="btn ghost small" aria-label="Remove" onClick=${() => act(() => del(`/api/attachments/${a.id}`), "Moved to trash")}>${icon("x")}</button>
       </div>`)}
       <div class="row nowrap"><input type="url" value=${link} onInput=${(e) => setLink(e.target.value)} placeholder="Paste a link" /><button class="btn small" disabled=${!link.trim()} onClick=${() => act(() => post(`/api/ideas/${idea.id}/attachments`, { url: link }), "Link added").then(() => setLink(""))}>Add</button></div>
       <label class="btn small" style="cursor:pointer;align-self:flex-start">${icon("plus")} Upload a file or photo<input type="file" hidden onChange=${upload} /></label>
@@ -420,7 +420,7 @@ function Work({ idea, people }) {
     ${doc && html`<${Modal} title=${doc.title} wide onClose=${() => setDoc(null)}>
       <${Markdown} text=${doc.markdown} />
       <div class="modal-foot">
-        <button class="btn danger" onClick=${async () => { await act(() => del(`/api/deliverables/${doc.id}`), "Deleted"); setDoc(null); }}>Delete</button>
+        <button class="btn danger" onClick=${async () => { await act(() => del(`/api/deliverables/${doc.id}`), "Moved to trash"); setDoc(null); }}>Delete</button>
         <button class="btn" onClick=${() => navigator.clipboard?.writeText(doc.markdown).then(() => toast("Copied"), () => toast("Couldn't copy", "error"))}>Copy</button>
         <a class="btn primary" href=${`/api/deliverables/${doc.id}/download`}>Download</a>
       </div>

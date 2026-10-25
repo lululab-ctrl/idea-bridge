@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { html, post } from "../lib.js";
 
 export function Setup({ onDone }) {
-  const [f, setF] = useState({ oName: "", oEmail: "", oPw: "", vName: "" });
+  const [f, setF] = useState({ oName: "", oEmail: "", oPw: "", vName: "", vPw: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -14,7 +14,7 @@ export function Setup({ onDone }) {
     try {
       await post("/api/setup", {
         organizer: { name: f.oName, email: f.oEmail, password: f.oPw },
-        visionary: { name: f.vName },
+        visionary: { name: f.vName, password: f.vPw },
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       location.hash = "#/settings?welcome=1";
@@ -33,14 +33,15 @@ export function Setup({ onDone }) {
         <h1>Welcome to Idea Bridge</h1>
         <p class="muted">Two quick questions and you're ready. Everything stays private to the two of you.</p>
       </div>
-      <div class="label">You review and organize</div>
+      <div class="label">Admin: you organize and manage everything</div>
       <label class="field">Your name<input type="text" required value=${f.oName} onInput=${set("oName")} autocomplete="given-name" /></label>
       <label class="field">Email <span class="hint">Optional. Used for the daily digest and reminders.</span><input type="email" value=${f.oEmail} onInput=${set("oEmail")} autocomplete="email" /></label>
       <label class="field">Password <span class="hint">At least 8 characters.</span><input type="password" required minlength="8" value=${f.oPw} onInput=${set("oPw")} autocomplete="new-password" /></label>
       <div class="divider"></div>
-      <div class="label">He records ideas</div>
+      <div class="label">Idea contributor: records ideas</div>
       <label class="field">His name<input type="text" required value=${f.vName} onInput=${set("vName")} /></label>
-      <p class="small muted">He won't need a password. Next you'll get a QR code that puts the app on his phone, already signed in.</p>
+      <label class="field">His password <span class="hint">Optional. You can also put the app on his phone with a QR code instead.</span><input type="password" minlength="8" value=${f.vPw} onInput=${set("vPw")} autocomplete="new-password" /></label>
+      <p class="small muted">He gets a simple app: the record button, his own ideas and recordings. Organizing, projects and settings stay with you.</p>
       ${error && html`<div class="banner bad"><div class="grow">${error}</div></div>`}
       <button class="btn primary" disabled=${busy}>${busy ? "Setting up…" : "Create our space"}</button>
     </form>

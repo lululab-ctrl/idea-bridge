@@ -46,6 +46,29 @@ export function requireUser(req: FastifyRequest): User {
   return req.user;
 }
 
+export const isAdmin = (u: User | null) => u?.role === "organizer";
+
+// What the idea contributor may do. Everything else under /api requires the admin.
+// Ownership (only his own recordings and ideas) is checked inside each route.
+const CONTRIBUTOR_ROUTES = new Set([
+  "GET /api/state",
+  "GET /api/health",
+  "POST /api/logout",
+  "POST /api/push/subscribe",
+  "GET /api/notifications",
+  "POST /api/notifications/read",
+  "POST /api/recordings",
+  "POST /api/recordings/text",
+  "GET /api/recordings",
+  "GET /api/recordings/:id",
+  "GET /api/recordings/:id/audio",
+  "POST /api/recordings/:id/retry",
+  "DELETE /api/recordings/:id",
+  "GET /api/questions/open",
+  "GET /api/my/ideas",
+  "GET /api/my/ideas/:id",
+]);
+
 export function idParam(req: FastifyRequest, name = "id"): number {
   const v = Number((req.params as Record<string, string>)[name]);
   if (!Number.isInteger(v) || v <= 0) throw new HttpError(400, "Invalid id.");
@@ -78,6 +101,13 @@ export async function buildApp(ctx: Ctx) {
     if (req.url.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
       if (req.headers["x-ideabridge"] !== "1") throw new HttpError(403, "Missing request header.");
     }
+  });
+
+  // Role check runs after routing, so it sees the route pattern (e.g. /api/ideas/:id).
+  app.addHook("preHandler", async (req) => {
+    if (!req.url.startsWith("/api/") || !req.user || isAdmin(req.user)) return;
+    const key = `${req.method} ${req.routeOptions.url}`;
+    if (!CONTRIBUTOR_ROUTES.has(key)) throw new HttpError(403, "This part of the app is managed by the admin.");
   });
 
   app.addHook("onSend", async (req, reply, payload) => {

@@ -13,7 +13,7 @@ export function Settings({ me }) {
     ${welcome && html`<div class="card stack" style="border-color:var(--accent)">
       <h2>You're set up. Three steps to get going:</h2>
       <ol class="stack tight" style="margin:0;padding-left:1.3em">
-        <li><b>Put the app on ${him?.name ?? "his"} phone:</b> under People, tap “Sign-in link” next to ${him?.name ?? "his name"} and let him scan the QR code. Then he taps Share → Add to Home Screen.</li>
+        <li><b>Put the app on ${him?.name ?? "his"} phone:</b> under People, tap “Sign-in link” next to ${him?.name ?? "his name"} and let him scan the QR code (or he signs in with his name and password). Then he taps Share → Add to Home Screen. He only sees the record button and his own ideas.</li>
         <li><b>Write your goals</b> below, so the AI can judge which ideas fit what you're building.</li>
         <li><b>Add the app to your own phone</b> and turn on notifications on this page.</li>
       </ol>
@@ -48,7 +48,7 @@ function People({ me, users }) {
       <div class="code">${link.url}</div>
       <div class="row"><button class="btn" onClick=${() => navigator.clipboard?.writeText(link.url).then(() => toast("Link copied"), () => toast("Select and copy the link above", "error"))}>Copy link</button><span class="small muted">Works once, expires in ${link.expiresHours} hours. Keep it private.</span></div>
     <//>`}
-    ${pw && html`<${PasswordModal} onClose=${() => setPw(null)} me=${me} />`}
+    ${pw && html`<${PasswordModal} onClose=${() => setPw(null)} user=${pw} me=${me} />`}
   </div>`;
 }
 
@@ -57,25 +57,28 @@ function Person({ u, me, onLink, onPw }) {
   const [email, setEmail] = useState(u.email ?? "");
   const dirty = name !== u.name || email !== (u.email ?? "");
   return html`<div class="stack tight" style="border-top:1px solid var(--line);padding-top:12px">
-    <div class="row between"><span class="strong">${u.name}${u.id === me.id ? " (you)" : ""}</span><span class="chip">${u.role === "visionary" ? "Records ideas" : "Reviews and organizes"}</span></div>
+    <div class="row between"><span class="strong">${u.name}${u.id === me.id ? " (you)" : ""}</span><span class="chip ${u.role === "organizer" ? "st st-approved" : ""}" title=${u.role === "organizer" ? "Full control over ideas, projects, tasks and settings" : "Can record ideas, see his own ideas and recordings, and delete his own recordings"}>${u.role === "organizer" ? "Admin" : "Idea contributor"}</span></div>
+    ${u.role === "visionary" && html`<div class="tiny muted">Can record ideas, see the ideas his recordings became, and delete his own recordings (they go to the trash). Can't change organization, projects, tasks or settings.</div>`}
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
       <label class="field">Name<input type="text" value=${name} onInput=${(e) => setName(e.target.value)} /></label>
       <label class="field">Email<input type="email" value=${email} onInput=${(e) => setEmail(e.target.value)} placeholder="For digests and reminders" /></label>
-      <label class="field">Opens to<select value=${u.home} onChange=${(e) => act(() => patch(`/api/users/${u.id}`, { home: e.target.value }), "Saved")}><option value="capture">The record button</option><option value="dashboard">Today</option></select></label>
+      ${u.role === "organizer" && html`<label class="field">Opens to<select value=${u.home} onChange=${(e) => act(() => patch(`/api/users/${u.id}`, { home: e.target.value }), "Saved")}><option value="capture">The record button</option><option value="dashboard">Today</option></select></label>`}
     </div>
     <div class="row">
       ${dirty && html`<button class="btn primary small" onClick=${() => act(() => patch(`/api/users/${u.id}`, { name, email }), "Saved")}>Save</button>`}
       <button class="btn small" onClick=${onLink}>${icon("link")} Sign-in link for a phone</button>
-      ${u.id === me.id && html`<button class="btn small" onClick=${onPw}>${u.has_password ? "Change password" : "Set a password"}</button>`}
+      <button class="btn small" onClick=${onPw}>${u.id === me.id ? "Change your password" : u.has_password ? `Reset ${u.name}'s password` : `Set a password for ${u.name}`}</button>
     </div>
   </div>`;
 }
 
-function PasswordModal({ me, onClose }) {
+function PasswordModal({ user, me, onClose }) {
   const [pw, setPw] = useState("");
-  return html`<${Modal} title="Password" onClose=${onClose}>
+  const self = user.id === me.id;
+  return html`<${Modal} title=${self ? "Your password" : `${user.name}'s password`} onClose=${onClose}>
+    ${!self && html`<p class="small">${user.name} will be signed out on his devices and will need this new password (or a new sign-in link).</p>`}
     <label class="field">New password <span class="hint">At least 8 characters.</span><input type="password" value=${pw} onInput=${(e) => setPw(e.target.value)} autocomplete="new-password" /></label>
-    <div class="modal-foot"><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${pw.length < 8} onClick=${async () => { if (await act(() => patch(`/api/users/${me.id}`, { password: pw }), "Password saved")) onClose(); }}>Save</button></div>
+    <div class="modal-foot"><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${pw.length < 8} onClick=${async () => { if (await act(() => patch(`/api/users/${user.id}`, { password: pw }), "Password saved")) onClose(); }}>Save</button></div>
   <//>`;
 }
 
@@ -205,6 +208,7 @@ function System() {
       <div class="label">Your data</div>
       <div class="small">Last backup: ${data.lastBackup ? `${when(data.lastBackup.at)}${data.lastBackup.offsite ? " (copied off-site)" : " (on the server)"}` : "not yet (runs nightly at 3:00)"}</div>
       <div class="row">
+        <a class="btn small" href="#/trash">${icon("archive")} Trash</a>
         <button class="btn small" onClick=${() => act(() => post("/api/backup"), "Backup complete")}>Back up now</button>
         <a class="btn small" href="/api/export">Download everything (.zip)</a>
       </div>

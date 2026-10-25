@@ -352,6 +352,27 @@ const migrations: string[] = [
     tokenize = 'unicode61 remove_diacritics 2'
   );
   `,
+  // 2: roles and recoverable deletes.
+  // Roles: 'organizer' is the Admin (full control); 'visionary' is the Idea
+  // contributor (records ideas, sees his own ideas, deletes his own recordings).
+  `
+  ALTER TABLE recordings ADD COLUMN deleted_at TEXT;          -- in the trash (recoverable)
+  ALTER TABLE recordings ADD COLUMN deleted_by INTEGER;
+  ALTER TABLE recordings ADD COLUMN purged_at TEXT;           -- audio + transcript permanently removed by the admin
+  CREATE INDEX recordings_deleted ON recordings(deleted_at);
+
+  -- Deleted tasks, files, documents and notes are kept here and can be restored.
+  CREATE TABLE trash (
+    id INTEGER PRIMARY KEY,
+    entity TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    data TEXT NOT NULL,                                       -- JSON copy of the deleted row
+    deleted_by INTEGER,
+    deleted_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  ALTER TABLE review_items ADD COLUMN recording_id INTEGER;
+  `,
 ];
 
 export function openDb(file = config.dbPath): DB {

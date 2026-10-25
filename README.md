@@ -6,7 +6,29 @@ A private app for two people: one has ideas all day and records them by voice; t
 - **The AI** transcribes the recording and splits it into separate thoughts. It connects each thought to ideas he has mentioned before and writes a clear explanation of what he means. When it isn't sure, it asks instead of guessing.
 - **You** go through new material in batches in a review queue. You read structured reports instead of listening to audio, ask him clarifying questions with one tap, and approve the ideas worth committing to. Approved ideas become projects with step-by-step plans.
 
-Nothing is ever lost. Original recordings are kept forever, every idea keeps its full version history, and "merging" never deletes anything.
+Nothing is ever lost. Original recordings are kept, every idea keeps its full version history, "merging" never deletes anything, and deleted items go to a trash you can restore from.
+
+## Roles
+
+| | Admin (you) | Idea contributor (him) |
+|---|---|---|
+| Record ideas by voice or text | ✓ | ✓ |
+| See the ideas his own recordings became, and his own recordings | ✓ | ✓ (read-only) |
+| Delete his own recordings | ✓ | ✓ (they go to the trash; ideas are not affected) |
+| Review queue, library, reports, evaluations, connections | ✓ | – |
+| Edit, merge, approve, archive ideas; tags and themes | ✓ | – |
+| Projects, plans, tasks, documents, Ask, Insights | ✓ | – |
+| Settings, people, passwords, AI teaching, exports, trash | ✓ | – |
+
+The limits are enforced by the server, not just hidden in the interface. Every request from the contributor's account is checked against a short allowlist, and he can only ever see or delete his own recordings.
+
+## Deleting and restoring
+
+- **Deleting a recording** (by either of you) moves it to **Trash**. The ideas, reports, projects and tasks built from it stay exactly as they are; his quoted words remain in the ideas. When he deletes one, you get an item in the review queue and can restore it with one click.
+- **Deleted tasks, files, documents and notes** also go to Trash and can be restored exactly as they were.
+- **Ideas are never deleted**, only archived (and can be brought back any time).
+- **Removing something permanently** is possible only for the admin, from Trash, one item at a time, after typing `DELETE`.
+- Nightly backups keep 14 days of complete snapshots on top of all this.
 
 ---
 
@@ -90,8 +112,10 @@ Railway runs the app around the clock and gives it a secure web address.
 
 ### 4. First run (5 minutes)
 
-1. Enter your name, an email (optional) and a password, then his name.
-2. On the next screen, tap **Sign-in link** next to his name. Scan the QR code with his phone and tap **Continue**. The app opens on the record button, already signed in.
+Do this right after the first deploy, before sharing the address: the first person to open the app creates the accounts.
+
+1. Enter your name, an email (optional) and your password. You become the **admin**. Then enter his name and, if you like, a password for him (he becomes the **idea contributor**).
+2. On the next screen, tap **Sign-in link** next to his name (or let him sign in with his name and password). Scan the QR code with his phone and tap **Continue**. The app opens on the record button, already signed in.
 3. Put it on his home screen:
    - **iPhone (Safari):** Share → **Add to Home Screen**.
    - **Android (Chrome):** ⋮ → **Install app**.
@@ -111,6 +135,7 @@ Optional extras (all in `.env.example`):
 - Open the app, tap the button, talk, tap again. That's it. Half-finished thoughts, several ideas in one go, jumping between topics: all fine.
 - If a question appears, tap **Answer by voice**.
 - "Your recent recordings" shows each one being understood and which ideas it became.
+- **Your ideas** (top left) lists everything his recordings turned into, with their status. **Recordings** (top right) lists his recordings; he can delete any of them there. Everything else is managed by the admin.
 
 ### For you
 

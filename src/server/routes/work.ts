@@ -6,6 +6,7 @@ import { getSetting, logActivity } from "../db.js";
 import { getIdea, setStatus, type IdeaRow } from "../ideas.js";
 import { localParts } from "../periodic.js";
 import { indexTask, safeJson, search } from "../search.js";
+import { moveToTrash } from "../trash.js";
 import { defaultWeights } from "./core.js";
 import { weightedScore } from "./ideas.js";
 
@@ -239,9 +240,7 @@ export async function workRoutes(app: FastifyInstance, ctx: Ctx) {
   app.delete("/api/tasks/:id", async (req) => {
     const me = requireUser(req);
     const id = idParam(req);
-    db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
-    db.prepare("DELETE FROM search_fts WHERE entity = 'task' AND entity_id = ?").run(id);
-    logActivity(db, me.id, "delete", "task", id);
+    if (!moveToTrash(db, "task", id, me.id)) throw new HttpError(404, "Task not found.");
     return { ok: true };
   });
 
@@ -293,9 +292,9 @@ export async function workRoutes(app: FastifyInstance, ctx: Ctx) {
       .prepare("SELECT id, title, completed_at FROM tasks WHERE status = 'done' ORDER BY completed_at DESC LIMIT 5")
       .all();
     const processing = db
-      .prepare("SELECT id, status, captured_at FROM recordings WHERE status NOT IN ('done','failed') ORDER BY id DESC")
+      .prepare("SELECT id, status, captured_at FROM recordings WHERE status NOT IN ('done','failed') AND deleted_at IS NULL ORDER BY id DESC")
       .all();
-    const failed = count("SELECT COUNT(*) AS n FROM recordings WHERE status = 'failed' AND archived = 0");
+    const failed = count("SELECT COUNT(*) AS n FROM recordings WHERE status = 'failed' AND archived = 0 AND deleted_at IS NULL");
     return {
       today: d,
       review: { total: reviewByKind.reduce((n, r) => n + r.n, 0), byKind: reviewByKind },

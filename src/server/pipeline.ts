@@ -103,6 +103,8 @@ export class Pipeline {
     const db = this.db;
     let rec = db.prepare("SELECT * FROM recordings WHERE id = ?").get(id) as RecordingRow | undefined;
     if (!rec || rec.status === "done") return;
+    // Deleted before it was processed: leave it alone (it can be restored later).
+    if ((rec as RecordingRow & { deleted_at?: string | null }).deleted_at) return;
     db.prepare("UPDATE recordings SET error = NULL WHERE id = ?").run(id);
 
     if (rec.transcript === null) {

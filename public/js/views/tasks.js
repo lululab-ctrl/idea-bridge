@@ -62,7 +62,7 @@ export function TaskModal({ task, projectId, ideaId, onClose }) {
     </div>
     ${task?.idea_id && html`<a class="small" href=${`#/ideas/${task.idea_id}`}>Open the idea behind this task</a>`}
     <div class="modal-foot">
-      ${task && html`<button class="btn danger" onClick=${async () => { if (await act(() => del(`/api/tasks/${task.id}`), "Deleted")) onClose(); }}>Delete</button>`}
+      ${task && html`<button class="btn danger" onClick=${async () => { if (await act(() => del(`/api/tasks/${task.id}`), "Moved to trash")) onClose(); }}>Delete</button>`}
       <span class="spacer"></span>
       <button class="btn" onClick=${onClose}>Cancel</button>
       <button class="btn primary" disabled=${!f.title.trim()} onClick=${save}>Save</button>

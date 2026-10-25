@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import QRCode from "qrcode";
 import { aiStatus } from "../ai/index.js";
 import { extForMime } from "../ai/speech.js";
-import { HttpError, idParam, requireUser, type Ctx } from "../app.js";
+import { HttpError, idParam, isAdmin, requireUser, type Ctx } from "../app.js";
 import {
   createLoginLink,
   createSession,
@@ -21,8 +21,9 @@ import {
 } from "../auth.js";
 import { config } from "../config.js";
 import { getSetting, logActivity, setSetting } from "../db.js";
-import { emailConfigured } from "../notify.js";
+import { emailConfigured, notifyRole } from "../notify.js";
 import { offsiteConfigured } from "../periodic.js";
+import { deleteRecording, purgeRecording, purgeTrashItem, restoreFromTrash, restoreRecording } from "../trash.js";
 import { safeJson } from "../search.js";
 import { ideaMarkdown } from "./ideas.js";
 
@@ -55,6 +56,9 @@ export async function coreRoutes(app: FastifyInstance, ctx: Ctx) {
     const pw = str(b.organizer?.password, 200);
     if (!oName || !vName) throw new HttpError(400, "Both names are required.");
     if (pw.length < 8) throw new HttpError(400, "Choose a password of at least 8 characters.");
+    const vPwIn = str(b.visionary?.password, 200);
+    if (vPwIn && vPwIn.length < 8) throw new HttpError(400, "The contributor's password needs at least 8 characters (or leave it empty).");
+    if (oName.toLowerCase() === vName.toLowerCase()) throw new HttpError(400, "Use two different names, so each of you can sign in.");
     const ins = db.prepare("INSERT INTO users (name, email, role, password_hash, home) VALUES (?, ?, ?, ?, ?)");
     const oid = Number(ins.run(oName, str(b.organizer?.email, 200) || null, "organizer", hashPassword(pw), "dashboard").lastInsertRowid);
     const vPw = str(b.visionary?.password, 200);
@@ -144,13 +148,19 @@ export async function coreRoutes(app: FastifyInstance, ctx: Ctx) {
     if (typeof b.notify_email === "boolean") (sets.push("notify_email = ?"), vals.push(b.notify_email ? 1 : 0));
     if (typeof b.notify_push === "boolean") (sets.push("notify_push = ?"), vals.push(b.notify_push ? 1 : 0));
     if (typeof b.password === "string") {
-      // Only you can change your own password.
-      if (id !== me.id) throw new HttpError(403, "You can only change your own password.");
       if (b.password.length < 8) throw new HttpError(400, "Choose a password of at least 8 characters.");
       sets.push("password_hash = ?");
       vals.push(hashPassword(b.password));
     }
     if (sets.length) db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+    if (typeof b.password === "string") {
+      // A new password signs that person out everywhere else.
+      if (id === me.id) {
+        const mine = crypto.createHash("sha256").update(req.cookies.ib_session ?? "").digest("hex");
+        db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?").run(id, mine);
+      } else db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+      logActivity(db, me.id, "password", "user", id);
+    }
     return { ok: true };
   });
 
@@ -263,9 +273,9 @@ export async function coreRoutes(app: FastifyInstance, ctx: Ctx) {
   app.get("/api/recordings", async (req) => {
     const me = requireUser(req);
     const q = req.query as { mine?: string; limit?: string; status?: string; before?: string };
-    const where: string[] = ["r.archived = 0"];
+    const where: string[] = ["r.archived = 0", "r.deleted_at IS NULL"];
     const vals: unknown[] = [];
-    if (q.mine) (where.push("r.user_id = ?"), vals.push(me.id));
+    if (q.mine || !isAdmin(me)) (where.push("r.user_id = ?"), vals.push(me.id));
     if (q.status) (where.push("r.status = ?"), vals.push(q.status));
     if (q.before) (where.push("r.id < ?"), vals.push(Number(q.before)));
     const rows = db
@@ -284,16 +294,17 @@ export async function coreRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   app.get("/api/recordings/:id", async (req) => {
-    requireUser(req);
+    const me = requireUser(req);
     const id = idParam(req);
     const r = db
       .prepare(
         `SELECT r.id, r.kind, r.captured_at, r.duration_sec, r.status, r.error, r.summary, r.transcript, r.segments, r.language,
-           r.transcribed_by, r.question_id, r.user_id, u.name AS user_name, r.audio_path IS NOT NULL AS has_audio
-         FROM recordings r LEFT JOIN users u ON u.id = r.user_id WHERE r.id = ?`,
+           r.transcribed_by, r.question_id, r.user_id, u.name AS user_name, r.audio_path IS NOT NULL AS has_audio,
+           r.deleted_at, r.purged_at, d.name AS deleted_by_name
+         FROM recordings r LEFT JOIN users u ON u.id = r.user_id LEFT JOIN users d ON d.id = r.deleted_by WHERE r.id = ?`,
       )
       .get(id) as Record<string, unknown> | undefined;
-    if (!r) throw new HttpError(404, "Recording not found.");
+    if (!r || (!isAdmin(me) && (r.user_id !== me.id || r.deleted_at))) throw new HttpError(404, "Recording not found.");
     const fragments = db
       .prepare(
         `SELECT f.id, f.title, f.quote, f.start_sec, f.end_sec, f.summary, f.interpretation, f.kind, f.commitment, f.link_decision,
@@ -311,19 +322,23 @@ export async function coreRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   app.get("/api/recordings/:id/audio", async (req, reply) => {
-    requireUser(req);
-    const r = db.prepare("SELECT audio_path, mime FROM recordings WHERE id = ?").get(idParam(req)) as
-      | { audio_path: string | null; mime: string | null }
+    const me = requireUser(req);
+    const r = db.prepare("SELECT audio_path, mime, user_id, deleted_at FROM recordings WHERE id = ?").get(idParam(req)) as
+      | { audio_path: string | null; mime: string | null; user_id: number | null; deleted_at: string | null }
       | undefined;
+    if (r && !isAdmin(me) && (r.user_id !== me.id || r.deleted_at)) throw new HttpError(404, "Audio not found.");
     if (!r?.audio_path || !fs.existsSync(r.audio_path)) throw new HttpError(404, "Audio not found.");
     return sendFileWithRange(req, reply, r.audio_path, r.mime ?? "audio/webm");
   });
 
   app.post("/api/recordings/:id/retry", async (req) => {
-    requireUser(req);
+    const me = requireUser(req);
     const id = idParam(req);
-    const r = db.prepare("SELECT status FROM recordings WHERE id = ?").get(id) as { status: string } | undefined;
-    if (!r) throw new HttpError(404, "Recording not found.");
+    const r = db.prepare("SELECT status, user_id, deleted_at FROM recordings WHERE id = ?").get(id) as
+      | { status: string; user_id: number | null; deleted_at: string | null }
+      | undefined;
+    if (!r || r.deleted_at || (!isAdmin(me) && r.user_id !== me.id)) throw new HttpError(404, "Recording not found.");
+    if (r.status === "done") return { ok: true };
     db.prepare("UPDATE recordings SET status = 'queued', error = NULL WHERE id = ?").run(id);
     db.prepare("DELETE FROM jobs WHERE type = 'process_recording' AND payload = ? AND status = 'pending'").run(JSON.stringify({ recordingId: id }));
     jobs.enqueue("process_recording", { recordingId: id });
@@ -338,6 +353,100 @@ export async function coreRoutes(app: FastifyInstance, ctx: Ctx) {
       logActivity(db, me.id, b.archived ? "archive" : "unarchive", "recording", idParam(req));
     }
     return { ok: true };
+  });
+
+  // Deleting a recording moves it to the trash. Ideas, reports and projects built
+  // from it are not touched, and the admin can restore it.
+  app.delete("/api/recordings/:id", async (req) => {
+    const me = requireUser(req);
+    const id = idParam(req);
+    const r = db.prepare("SELECT user_id, deleted_at FROM recordings WHERE id = ?").get(id) as
+      | { user_id: number | null; deleted_at: string | null }
+      | undefined;
+    if (!r || (!isAdmin(me) && r.user_id !== me.id)) throw new HttpError(404, "Recording not found.");
+    deleteRecording(db, id, me);
+    if (!isAdmin(me)) notifyRole(db, "organizer", { title: `${me.name} deleted a recording`, body: "It's in the trash. Ideas from it are unchanged.", url: "#/review" }, { push: false });
+    return { ok: true };
+  });
+
+  app.post("/api/recordings/:id/restore", async (req) => {
+    const me = requireUser(req);
+    const id = idParam(req);
+    restoreRecording(db, id, me.id);
+    const r = db.prepare("SELECT status, purged_at FROM recordings WHERE id = ?").get(id) as { status: string; purged_at: string | null } | undefined;
+    if (r && !r.purged_at && !["done", "failed"].includes(r.status)) jobs.enqueue("process_recording", { recordingId: id });
+    db.prepare("UPDATE review_items SET status = 'done', resolution = 'restored', resolved_at = datetime('now') WHERE kind = 'recording_deleted' AND status = 'open' AND recording_id = ?").run(id);
+    return { ok: true };
+  });
+
+  app.delete("/api/recordings/:id/purge", async (req) => {
+    const me = requireUser(req);
+    if ((req.body as { confirm?: string } | undefined)?.confirm !== "DELETE") throw new HttpError(400, "Type DELETE to confirm.");
+    if (!purgeRecording(db, idParam(req), me.id)) throw new HttpError(400, "Only recordings in the trash can be removed permanently.");
+    return { ok: true };
+  });
+
+  // ------------------------------------------------------------------- trash
+  app.get("/api/trash", async (req) => {
+    requireUser(req);
+    const recordings = db
+      .prepare(
+        `SELECT r.id, r.captured_at, r.summary, r.deleted_at, r.purged_at, r.duration_sec, u.name AS user_name, d.name AS deleted_by_name,
+           (SELECT COUNT(DISTINCT idea_id) FROM fragments f WHERE f.recording_id = r.id AND f.idea_id IS NOT NULL) AS ideas
+         FROM recordings r LEFT JOIN users u ON u.id = r.user_id LEFT JOIN users d ON d.id = r.deleted_by
+         WHERE r.deleted_at IS NOT NULL ORDER BY r.deleted_at DESC`,
+      )
+      .all();
+    const items = db
+      .prepare("SELECT t.id, t.entity, t.label, t.deleted_at, u.name AS deleted_by_name FROM trash t LEFT JOIN users u ON u.id = t.deleted_by ORDER BY t.id DESC")
+      .all();
+    return { recordings, items };
+  });
+
+  app.post("/api/trash/:id/restore", async (req) => {
+    const me = requireUser(req);
+    const r = restoreFromTrash(db, idParam(req), me.id);
+    if (!r.ok) throw new HttpError(404, r.reason ?? "Can't restore.");
+    return { ok: true };
+  });
+
+  app.delete("/api/trash/:id", async (req) => {
+    const me = requireUser(req);
+    if ((req.body as { confirm?: string } | undefined)?.confirm !== "DELETE") throw new HttpError(400, "Type DELETE to confirm.");
+    purgeTrashItem(db, idParam(req), me.id);
+    return { ok: true };
+  });
+
+  // His ideas, read-only: the ideas his own recordings fed into.
+  app.get("/api/my/ideas", async (req) => {
+    const me = requireUser(req);
+    return db
+      .prepare(
+        `SELECT i.id, i.title, i.summary, i.status, i.last_activity_at, i.created_at, COUNT(f.id) AS mentions, MAX(r.captured_at) AS last_mentioned
+         FROM ideas i JOIN fragments f ON f.idea_id = i.id JOIN recordings r ON r.id = f.recording_id
+         WHERE r.user_id = ? AND r.deleted_at IS NULL GROUP BY i.id ORDER BY last_mentioned DESC LIMIT 300`,
+      )
+      .all(me.id);
+  });
+
+  app.get("/api/my/ideas/:id", async (req) => {
+    const me = requireUser(req);
+    const id = idParam(req);
+    const fragments = db
+      .prepare(
+        `SELECT f.id, f.quote, f.start_sec, f.recording_id, r.captured_at, r.audio_path IS NOT NULL AS has_audio
+         FROM fragments f JOIN recordings r ON r.id = f.recording_id
+         WHERE f.idea_id = ? AND r.user_id = ? AND r.deleted_at IS NULL ORDER BY r.captured_at DESC`,
+      )
+      .all(id, me.id);
+    if (!fragments.length) throw new HttpError(404, "Idea not found.");
+    const idea = db
+      .prepare("SELECT i.id, i.title, i.summary, i.status, i.created_at, p.name AS project_name FROM ideas i LEFT JOIN projects p ON p.id = i.project_id WHERE i.id = ?")
+      .get(id);
+    const questions = db
+      .prepare("SELECT id, text, status, answer_text FROM questions WHERE idea_id = ? AND status IN ('asked','answered') ORDER BY id")
+      .all(id);
+    return { ...(idea as object), fragments, questions };
   });
 
   // Questions waiting for the person who records ideas.

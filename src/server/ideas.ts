@@ -240,6 +240,7 @@ export interface ReviewInput {
   otherIdeaId?: number | null;
   fragmentId?: number | null;
   linkId?: number | null;
+  recordingId?: number | null;
   note?: string;
 }
 
@@ -247,9 +248,9 @@ export function addReview(db: DB, r: ReviewInput): number {
   return Number(
     db
       .prepare(
-        "INSERT INTO review_items (kind, idea_id, other_idea_id, fragment_id, link_id, note) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO review_items (kind, idea_id, other_idea_id, fragment_id, link_id, recording_id, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(r.kind, r.ideaId ?? null, r.otherIdeaId ?? null, r.fragmentId ?? null, r.linkId ?? null, r.note ?? null)
+      .run(r.kind, r.ideaId ?? null, r.otherIdeaId ?? null, r.fragmentId ?? null, r.linkId ?? null, r.recordingId ?? null, r.note ?? null)
       .lastInsertRowid,
   );
 }

@@ -12,6 +12,8 @@ import { Tasks } from "./views/tasks.js";
 import { Ask } from "./views/ask.js";
 import { Insights } from "./views/insights.js";
 import { Settings } from "./views/settings.js";
+import { Trash } from "./views/trash.js";
+import { Mine, MyIdea, MyRecording } from "./views/mine.js";
 
 const NAV = [
   { path: "today", label: "Today", icon: "home" },
@@ -63,8 +65,22 @@ function More() {
         (n) => html`<a class="item" href=${`#/${n.path}`}>${icon(n.icon)}<span class="grow item-title">${n.label}</span></a>`,
       )}
       <a class="item" href="#/recordings">${icon("mic")}<span class="grow item-title">All recordings</span></a>
+      <a class="item" href="#/trash">${icon("archive")}<span class="grow item-title">Trash</span></a>
     </div>
   </div>`;
+}
+
+// The idea contributor only gets the record screen and a read-only view of his
+// own ideas and recordings. The server enforces the same limits.
+function ContributorRouter({ me }) {
+  const route = useRoute();
+  const [a, b, c] = route.parts;
+  let view;
+  if (a === "mine" && b === "ideas" && c) view = html`<${MyIdea} id=${Number(c)} key=${c} />`;
+  else if (a === "mine" && b === "recordings" && c) view = html`<${MyRecording} id=${Number(c)} key=${c} />`;
+  else if (a === "mine") view = html`<${Mine} tab=${b === "recordings" ? "recordings" : "ideas"} />`;
+  else view = html`<${Capture} me=${me} />`;
+  return html`${view}<${AudioDock} />`;
 }
 
 function Router({ me }) {
@@ -109,6 +125,9 @@ function Router({ me }) {
     case "settings":
       view = html`<${Settings} me=${me} />`;
       break;
+    case "trash":
+      view = html`<${Trash} />`;
+      break;
     case "more":
       view = html`<${More} />`;
       break;
@@ -137,7 +156,7 @@ function App() {
   useEffect(() => {
     // First open after signing in: go to the person's home screen.
     if (state?.user && (!location.hash || location.hash === "#/" || location.hash === "#")) {
-      go(state.user.home === "capture" ? "/capture" : "/today");
+      go(state.user.role === "visionary" || state.user.home === "capture" ? "/capture" : "/today");
     }
   }, [state?.user?.id]);
 
@@ -147,6 +166,7 @@ function App() {
   if (!state) return html`<div class="boot">Idea Bridge</div>`;
   if (state.setupNeeded) return html`<${Setup} onDone=${load} />`;
   if (!state.user) return html`<${Login} onDone=${load} />`;
+  if (state.user.role === "visionary") return html`<${ContributorRouter} me=${state.user} />`;
   return html`<${Router} me=${state.user} />`;
 }
 

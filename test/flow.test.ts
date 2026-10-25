@@ -79,12 +79,12 @@ describe("Idea Bridge end to end (mock AI)", () => {
       method: "POST",
       url: "/api/setup",
       headers: { ...H, "content-type": "application/json" },
-      payload: JSON.stringify({ organizer: { name: "Dana", password: "correct horse 1" }, visionary: { name: "Avi" }, timezone: "Asia/Jerusalem" }),
+      payload: JSON.stringify({ organizer: { name: "Lulu", password: "correct horse 1" }, visionary: { name: "Matan" }, timezone: "Asia/Jerusalem" }),
     });
     assert.equal(res.statusCode, 200, res.body);
     cookie = String(res.headers["set-cookie"]).split(";")[0];
     const me = await api("GET", "/api/state");
-    assert.equal(me.user.name, "Dana");
+    assert.equal(me.user.name, "Lulu");
     assert.equal(me.user.role, "organizer");
 
     const users = await api<any[]>("GET", "/api/users");
@@ -100,7 +100,7 @@ describe("Idea Bridge end to end (mock AI)", () => {
     assert.equal(login.statusCode, 302);
     hisCookie = String(login.headers["set-cookie"]).split(";")[0];
     const his = await api("GET", "/api/state", undefined, hisCookie);
-    assert.equal(his.user.name, "Avi");
+    assert.equal(his.user.name, "Matan");
     assert.equal(his.user.home, "capture");
     // Links work once.
     const again = await srv.app.inject({ method: "POST", url: `/login/${token}` });
@@ -108,9 +108,9 @@ describe("Idea Bridge end to end (mock AI)", () => {
   });
 
   it("rejects a wrong password and accepts the right one", async () => {
-    const bad = await srv.app.inject({ method: "POST", url: "/api/login", headers: { ...H, "content-type": "application/json" }, payload: JSON.stringify({ name: "dana", password: "nope" }) });
+    const bad = await srv.app.inject({ method: "POST", url: "/api/login", headers: { ...H, "content-type": "application/json" }, payload: JSON.stringify({ name: "lulu", password: "nope" }) });
     assert.equal(bad.statusCode, 401);
-    const good = await srv.app.inject({ method: "POST", url: "/api/login", headers: { ...H, "content-type": "application/json" }, payload: JSON.stringify({ name: "dana", password: "correct horse 1" }) });
+    const good = await srv.app.inject({ method: "POST", url: "/api/login", headers: { ...H, "content-type": "application/json" }, payload: JSON.stringify({ name: "lulu", password: "correct horse 1" }) });
     assert.equal(good.statusCode, 200);
   });
 
@@ -292,6 +292,96 @@ describe("Idea Bridge end to end (mock AI)", () => {
     const res = await srv.app.inject({ method: "GET", url: `/api/recordings/${voice.id}/audio`, headers: { cookie, range: "bytes=0-9" } });
     assert.equal(res.statusCode, 206);
     assert.equal(res.rawPayload.length, 10);
+  });
+
+  it("limits the contributor to recording and his own ideas", async () => {
+    const as = (method: string, url: string, body?: unknown) =>
+      srv.app.inject({ method: method as "GET", url, headers: { ...H, cookie: hisCookie, ...(body ? { "content-type": "application/json" } : {}) }, payload: body ? JSON.stringify(body) : undefined });
+    for (const [m, u, b] of [
+      ["GET", "/api/ideas"],
+      ["GET", `/api/ideas/${dogIdea}`],
+      ["PATCH", `/api/ideas/${dogIdea}`, { status: "archived" }],
+      ["POST", `/api/ideas/${dogIdea}/merge`, { other_id: podcastIdea }],
+      ["GET", "/api/review"],
+      ["GET", "/api/settings"],
+      ["PUT", "/api/settings", { north_star: "x" }],
+      ["GET", "/api/users"],
+      ["PATCH", "/api/users/1", { password: "takeover123" }],
+      ["POST", "/api/users/1/login-link"],
+      ["GET", "/api/projects"],
+      ["GET", "/api/tasks"],
+      ["GET", "/api/export"],
+      ["GET", "/api/trash"],
+      ["POST", "/api/ask", { question: "x" }],
+      ["GET", "/api/system"],
+    ] as [string, string, unknown?][]) {
+      const res = await as(m, u, b);
+      assert.equal(res.statusCode, 403, `${m} ${u} should be admin-only`);
+    }
+    const mine = (await as("GET", "/api/my/ideas")).json();
+    assert.ok(mine.length >= 2, "he sees the ideas his recordings created");
+    const one = (await as("GET", `/api/my/ideas/${mine[0].id}`)).json();
+    assert.ok(one.fragments.length >= 1);
+    assert.equal(one.report, undefined, "reports stay in the admin workspace");
+  });
+
+  it("only shows the contributor his own recordings", async () => {
+    const r = await api("POST", "/api/recordings/text", { text: "Admin's own note about the office move." });
+    await srv.ctx.jobs.idle();
+    const res = await srv.app.inject({ method: "GET", url: `/api/recordings/${r.id}`, headers: { cookie: hisCookie } });
+    assert.equal(res.statusCode, 404);
+    const list = (await srv.app.inject({ method: "GET", url: "/api/recordings", headers: { cookie: hisCookie } })).json();
+    assert.ok(list.every((x: any) => x.user_name === "Matan"));
+    const del = await srv.app.inject({ method: "DELETE", url: `/api/recordings/${r.id}`, headers: { ...H, cookie: hisCookie } });
+    assert.equal(del.statusCode, 404, "he can't delete someone else's recording");
+  });
+
+  it("deleting a recording keeps its ideas and can be undone", async () => {
+    const before = await api("GET", `/api/ideas/${dogIdea}`);
+    const recId = before.fragments[0].recording_id;
+    const del = await srv.app.inject({ method: "DELETE", url: `/api/recordings/${recId}`, headers: { ...H, cookie: hisCookie } });
+    assert.equal(del.statusCode, 200);
+    const after = await api("GET", `/api/ideas/${dogIdea}`);
+    assert.equal(after.fragments.length, before.fragments.length, "idea keeps his words");
+    assert.equal(after.status, before.status);
+    const his = (await srv.app.inject({ method: "GET", url: "/api/recordings", headers: { cookie: hisCookie } })).json();
+    assert.ok(!his.some((x: any) => x.id === recId), "gone from his list");
+    const review = await api<any[]>("GET", "/api/review");
+    const item = review.find((x) => x.kind === "recording_deleted");
+    assert.ok(item, "admin is told about it");
+    const trash = await api("GET", "/api/trash");
+    assert.ok(trash.recordings.some((x: any) => x.id === recId));
+    await api("POST", `/api/review/${item.id}`, { action: "restore" });
+    const back = (await srv.app.inject({ method: "GET", url: "/api/recordings", headers: { cookie: hisCookie } })).json();
+    assert.ok(back.some((x: any) => x.id === recId), "restored");
+    // Permanent removal needs explicit confirmation and still keeps the idea.
+    await srv.app.inject({ method: "DELETE", url: `/api/recordings/${recId}`, headers: { ...H, cookie: hisCookie } });
+    const noConfirm = await srv.app.inject({ method: "DELETE", url: `/api/recordings/${recId}/purge`, headers: { ...H, cookie } });
+    assert.equal(noConfirm.statusCode, 400);
+    await api("DELETE", `/api/recordings/${recId}/purge`, { confirm: "DELETE" });
+    const still = await api("GET", `/api/ideas/${dogIdea}`);
+    assert.equal(still.fragments.length, before.fragments.length);
+  });
+
+  it("deleted tasks go to the trash and come back", async () => {
+    const t = await api("POST", "/api/tasks", { title: "Call the vet association" });
+    await api("DELETE", `/api/tasks/${t.id}`);
+    const trash = await api("GET", "/api/trash");
+    const item = trash.items.find((x: any) => x.entity === "task");
+    assert.ok(item);
+    await api("POST", `/api/trash/${item.id}/restore`);
+    const tasks = await api<any[]>("GET", "/api/tasks");
+    assert.ok(tasks.some((x) => x.id === t.id && x.title === "Call the vet association"));
+  });
+
+  it("lets the admin reset the contributor's password", async () => {
+    const users = await api<any[]>("GET", "/api/users");
+    const him = users.find((u) => u.role === "visionary");
+    await api("PATCH", `/api/users/${him.id}`, { password: "new-pass-123" });
+    const old = await srv.app.inject({ method: "GET", url: "/api/state", headers: { cookie: hisCookie } });
+    assert.equal(old.json().user, null, "his old session was signed out");
+    const login = await srv.app.inject({ method: "POST", url: "/api/login", headers: { ...H, "content-type": "application/json" }, payload: JSON.stringify({ name: "matan", password: "new-pass-123" }) });
+    assert.equal(login.statusCode, 200);
   });
 
   it("keeps unauthenticated visitors out", async () => {
