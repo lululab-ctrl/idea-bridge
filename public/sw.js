@@ -1,8 +1,9 @@
 // Idea Bridge service worker: notifications and a fast, offline-capable app shell.
 // App files are fetched from the network first so updates arrive immediately;
 // the cached copy is only used when offline. API calls are never cached.
-const CACHE = "ib-shell-v2";
-const SHELL = ["/", "/config.js", "/css/app.css", "/js/main.js", "/js/lib.js", "/js/recorder.js", "/icons/icon-192.png", "/manifest.webmanifest"];
+const CACHE = "ib-shell-v3";
+// Paths are relative to this file, so the app works at a domain root or in a folder.
+const SHELL = ["./", "./config.js", "./css/app.css", "./js/main.js", "./js/lib.js", "./js/recorder.js", "./icons/icon-192.png", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
@@ -28,7 +29,7 @@ self.addEventListener("fetch", (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match("/"))),
+      .catch(() => caches.match(e.request).then((r) => r || caches.match("./"))),
   );
 });
 
@@ -42,17 +43,17 @@ self.addEventListener("push", (e) => {
   e.waitUntil(
     self.registration.showNotification(data.title || "Idea Bridge", {
       body: data.body || "",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      data: { url: data.url || "/" },
+      icon: "./icons/icon-192.png",
+      badge: "./icons/icon-192.png",
+      data: { url: data.url || "" },
     }),
   );
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const target = e.notification.data?.url || "/";
-  const url = target.startsWith("#") ? `/${target}` : target;
+  const target = e.notification.data?.url || "";
+  const url = new URL(target.replace(/^\//, ""), self.registration.scope).href;
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const c of list) {

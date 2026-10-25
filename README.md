@@ -38,7 +38,7 @@ The limits are enforced by the server, not just hidden in the interface. Every r
 
 1. [What it costs: nothing](#what-it-costs-nothing)
 2. [What it does](#what-it-does)
-3. [Setting it up (about 45 minutes, no coding)](#setting-it-up)
+3. [Setting it up (about 15 minutes, no coding)](#setting-it-up)
 4. [Daily use](#daily-use)
 5. [Free-plan limits and what happens when you reach them](#free-plan-limits)
 6. [Privacy, security and backups](#privacy-security-and-backups)
@@ -57,8 +57,8 @@ Every service runs on a free plan that needs **no credit card**, so nothing can 
 | Understanding (Claude) | Anthropic API, paid from the **monthly API credits included in your Claude Team plan** | Team plans include API credits each month ($20 per Standard seat). No payment method is attached, so when the credits run out requests simply stop until next month. The app also has its own monthly cap (default $18), so it never uses everything. |
 | Transcription | **Groq** free plan (Whisper large-v3) | Free with no card. Hebrew, English and mixed speech. |
 | Database, file storage, server | **Supabase** free plan | 500 MB database, 1 GB files, server functions and a scheduler. No card. |
-| Web app | **Cloudflare Pages** free plan | Unlimited visits for a static site. No card. |
-| Deploys and nightly backups | **GitHub Actions** | Free minutes for this size. |
+| Web app | **GitHub Pages** | Free for this repository. No card. |
+| Deploys and nightly backups | **GitHub Actions** | Free for public repositories. |
 | Email digests (optional) | **Resend** free plan | 3,000 emails a month. Push notifications work without it. |
 
 Daily work uses Claude Haiku (fast and cheap); reports, evaluations, plans, insights and documents use Claude Sonnet. At a few recordings a day this is typically a few dollars of credits a month. **Settings → System** shows exactly how much has been used.
@@ -90,64 +90,34 @@ Daily work uses Claude Haiku (fast and cheap); reports, evaluations, plans, insi
 
 ## Setting it up
 
-You'll create four free accounts and copy a few keys into GitHub. GitHub then deploys everything. Keep a private note open to paste values into as you go.
+The app lives at **https://lululab-ctrl.github.io/idea-bridge/** and talks to the Supabase project `mhfiboimwscurahprugu`. GitHub builds and deploys everything by itself on every change; it only needs one key from you.
 
-### 1. Supabase: database, storage and server (10 minutes)
+### 1. Let GitHub deploy to Supabase (2 minutes, once)
 
-1. Go to **supabase.com** → *Start your project* → sign in with GitHub. Choose the **Free** plan.
-2. **New project**: name `idea-bridge`, region **Central EU (Frankfurt)** (closest to Israel). Click *Generate a password* and save it in your note as **SUPABASE_DB_PASSWORD**.
-3. When it's ready, copy the project **reference** from the address bar (the part after `/project/`, e.g. `abcdefghijklmnop`). Save it as **SUPABASE_PROJECT_REF**.
-4. Click **Connect** (top of the project) → **Session pooler** → copy the URI and replace `[YOUR-PASSWORD]` with the password from step 2. Save it as **SUPABASE_DB_URL** (used only by the nightly backup).
-5. Click your avatar → **Account preferences → Access Tokens** → *Generate new token* named `github-deploy`. Save it as **SUPABASE_ACCESS_TOKEN**.
+1. Open **https://supabase.com/dashboard/account/tokens** → *Generate new token*, name it `github-deploy`, and copy it.
+2. Open **https://github.com/lululab-ctrl/idea-bridge/settings/secrets/actions/new**. Name: `SUPABASE_ACCESS_TOKEN`. Secret: paste the token. *Add secret*.
+3. **Actions → Deploy → Run workflow** (or wait for the next change). It tests, sets up the database, deploys the server and publishes the app, in about 3 minutes.
 
-### 2. Groq: transcription (3 minutes)
+If the app address shows "404" after a green deploy: **Settings → Pages** → *Source: Deploy from a branch* → branch `gh-pages`, folder `/ (root)` → *Save*. It's live a minute later.
 
-1. Go to **console.groq.com** and sign in. No card is asked for; stay on the free plan.
-2. **API Keys** → *Create API Key* named `idea-bridge`. Save it as **GROQ_API_KEY**.
+### 2. First run (5 minutes, do it right away)
 
-### 3. Claude: understanding (5 minutes, done by the Team plan's Owner)
-
-The monthly API credits belong to the organization, so the person who is **Owner** of your Claude Team plan does this:
-
-1. On **claude.ai** → **Settings → Organization → Billing**, find the monthly API credits and claim them. This links a Claude Console organization (create one if asked). No payment method is needed.
-2. In **console.anthropic.com** → **API Keys** → *Create Key* named `idea-bridge`. Save it as **ANTHROPIC_API_KEY**.
-3. Recommended: under **Limits**, set a monthly spend limit for the workspace as a second safety net.
-
-### 4. Cloudflare Pages: the web app (10 minutes)
-
-1. Go to **dash.cloudflare.com**, sign up (free, no card).
-2. **Workers & Pages → Create → Pages → Connect to Git** → choose the `idea-bridge` repository.
-3. Build settings:
-   - Build command: `npm ci && npm run build:web`
-   - Build output directory: `dist`
-   - Environment variable: `IDEA_BRIDGE_API_URL` = `https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1`
-4. *Save and Deploy*. Copy the address it gives you (e.g. `https://idea-bridge.pages.dev`) and save it as **APP_URL** (no slash at the end).
-
-### 5. GitHub: secrets and the first deploy (10 minutes)
-
-1. In the repository on GitHub → **Settings → Secrets and variables → Actions → New repository secret**. Add each value from your note:
-
-   | Secret | Required |
-   |---|---|
-   | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`, `SUPABASE_DB_URL` | yes |
-   | `ANTHROPIC_API_KEY`, `GROQ_API_KEY` | yes |
-   | `APP_URL` | yes |
-   | `WORKER_SECRET`: any long random text (e.g. 40 characters from a password generator) | yes |
-   | `RESEND_API_KEY`, `MAIL_FROM` (e.g. `Idea Bridge <ideas@yourdomain.com>`) | only for email digests |
-   | `VAPID_SUBJECT` (e.g. `mailto:you@example.com`) | optional, for push notifications |
-
-2. **Actions → Deploy API → Run workflow**. It runs the tests, sets up the database, stores the keys on Supabase and deploys the server. It takes about 3 minutes and should end green.
-3. **Actions → Nightly backup → Run workflow** once, to check the backup works.
-
-From now on every change pushed to `main` deploys by itself.
-
-### 6. First run (5 minutes, do it right away)
-
-1. Open your **APP_URL**. The first person to open it creates the space, so do this immediately after deploying.
+1. Open **https://lululab-ctrl.github.io/idea-bridge/**. The first person to open it creates the space, so do this right after the first deploy.
 2. Fill in **you** (name `Lulu`) as Admin and **Matan** as Idea contributor, each with your own password. Passwords are never stored in the code; only a secure hash is kept.
 3. Add the app to your home screen: iPhone: Share → *Add to Home Screen*; Android: menu → *Install app*.
 4. For Matan's phone: **Settings → People → Sign-in link for a phone** shows a QR code. He scans it, taps *Continue* and is signed in. Then he adds it to his home screen.
-5. Optional: fill in **Our goals** and a few words of **his vocabulary** under Settings. The AI uses both every time.
+
+### 3. Add the AI keys (10 minutes, in the app)
+
+In the app: **Settings → AI keys**. Each key is checked when you save it and is never shown again.
+
+- **Groq** (transcription, free): sign in at **https://console.groq.com/keys**, *Create API Key*, paste it.
+- **Claude** (understanding): done by the **Owner** of your Claude Team plan. On claude.ai → **Settings → Organization → Billing**, claim the monthly API credits (this links a Claude Console organization; no payment method needed). Then at **https://console.anthropic.com/settings/keys** → *Create Key*, paste it. Recommended: set a monthly spend limit under *Limits* in the Console as a second safety net.
+- **Resend** (optional, email digests): only if you want emails; push notifications work without it.
+
+Recordings made before the keys are added are kept and processed automatically once they are.
+
+Optional: fill in **Our goals** and a few words of **his vocabulary** under Settings. The AI uses both every time.
 
 ---
 
@@ -203,10 +173,11 @@ Brainstorms never turn into obligations by themselves. Only **Approve** creates 
 - **Everything is private.** Storage buckets are private; audio and files are reached through links that expire. The database is only reachable by the server (row-level security blocks the public keys).
 - **Sign-in:** passwords are hashed with scrypt; repeated wrong passwords are slowed down; sessions can be ended by changing a password. Sign-in links are single-use and expire.
 - **Permissions are enforced on the server**, not only hidden in the app.
-- **Backups:** every night GitHub saves a full database dump (kept 30 days; *Actions → Nightly backup → the run → Artifacts*). Audio isn't in the dump; it stays in Supabase storage. **Settings → Download everything** makes a readable copy any time.
-- **Restoring a backup:** download the artifact, unzip it, then run (with Docker, or with Postgres 17's `pg_restore` installed):
+- **Backups:** every night GitHub saves every table of the database (kept 30 days; *Actions → Nightly backup → the run → Artifacts*). Audio isn't in the backup; it stays in Supabase storage. **Settings → Download everything** makes a readable copy any time.
+- **Restoring a backup:** download the artifact and unzip it. With [Deno](https://deno.com) installed, from this repository's folder (this **replaces** the current data with the backup):
   ```bash
-  pg_restore --clean --if-exists --no-owner --dbname "<SUPABASE_DB_URL>" idea-bridge.dump
+  SUPABASE_ACCESS_TOKEN=<token> SUPABASE_PROJECT_REF=mhfiboimwscurahprugu \
+    deno run -A --node-modules-dir=none scripts/ops.ts restore idea-bridge-backup.json
   ```
 
 ---
@@ -215,8 +186,7 @@ Brainstorms never turn into obligations by themselves. Only **Approve** creates 
 
 | Problem | Fix |
 |---|---|
-| The app says it can't reach the server | Check `IDEA_BRIDGE_API_URL` in Cloudflare Pages (it must end in `/functions/v1`), then *Retry deployment*. Check that **Deploy API** succeeded on GitHub. |
-| Sign-in works on the computer but requests fail with a CORS error | `APP_URL` must exactly match the Cloudflare address (with `https://`, no slash at the end). Fix the secret and run **Deploy API** again. |
+| The app says it can't reach the server | Check that the last **Deploy** run on GitHub is green. If the *api* step says the token is missing or rejected, make a new token (step 1) and replace the secret. |
 | Recordings stay "Waiting" | **Settings → System**: check "last ran". If it never runs, open the Supabase dashboard → **Integrations → Cron** and confirm the job `idea-bridge-worker` exists. Any use of the app also starts the worker, so work still moves while someone is using it. |
 | "This month's budget is used up" | See [Free-plan limits](#free-plan-limits). |
 | Transcription errors mention a limit | Groq's free daily limit; it continues by itself after the reset. |
@@ -236,7 +206,7 @@ FROM users WHERE role = 'organizer';
 ## How it works
 
 ```
-Phone / computer (PWA on Cloudflare Pages)
+Phone / computer (PWA on GitHub Pages)
    │  audio goes straight to Supabase Storage (signed upload link)
    ▼
 Supabase Edge Function "api" (Deno) ──► Postgres (all data, job queue, full-text search)
@@ -267,7 +237,8 @@ supabase/
     lib/routes/           HTTP API
     tests/                end-to-end tests against a real Postgres (simulated AI)
 public/                   the app (Preact + htm, no build step), service worker, icons
-scripts/build-web.mjs     builds dist/ for Cloudflare Pages
+scripts/build-web.mjs     builds dist/ (the web app)
+scripts/ops.ts            database changes, server settings, backup and restore
 .github/workflows/        deploy and nightly backup
 ```
 
@@ -280,7 +251,7 @@ deno task test            # end-to-end tests
 deno task check           # type check
 # run locally with simulated AI:
 DATABASE_URL=postgres://postgres@localhost:54329/ideabridge AI_MODE=mock STORAGE_MODE=local \
-  LOCAL_STORAGE_DIR=/tmp/ib WORKER_SECRET=dev APP_URL=http://localhost:8080 deno run -A index.ts
+  LOCAL_STORAGE_DIR=/tmp/ib APP_URL=http://localhost:8080 deno run -A index.ts
 # in another terminal, from the repository root:
 IDEA_BRIDGE_API_URL=http://localhost:8000 npm run build:web && npx serve dist -l 8080
 ```
@@ -294,7 +265,8 @@ Researched on 25 October 2026. Free plans change, so check the providers' pages 
 **Goal: genuinely free, no card, maintainable.** Options were rejected when they need a payment method, are trials, sleep in a way that stops background work, or need a computer that's always on.
 
 - **Supabase** (chosen): database, file storage, server functions and a scheduler in one free plan, no card. Trade-offs: 1 GB of files, no automatic backups (covered by the nightly GitHub backup), pauses after a week unused (covered by the nightly run).
-- **Cloudflare Pages** (chosen) for the web app: free, fast, no card.
+- **Keys entered in the app** rather than on GitHub, so setup needs only one token on GitHub. They're stored in the database, which only the server can read, and are never sent back to the browser or included in exports.
+- **GitHub Pages** (chosen) for the web app: free for a public repository, no extra account. (Supabase can't serve web pages on its free domain.) The code is public; your data is not, it lives only in Supabase.
 - Rejected for hosting: Oracle Cloud free tier (needs a card), Northflank (needs a payment method), Render / Koyeb / Fly.io / Railway / Hugging Face Spaces (sleep, no persistent disk, or not free).
 - **Claude via Team plan API credits** (chosen): your team already pays for the plan, the credits need no payment method, and running out simply pauses requests. Haiku does daily work cheaply; Sonnet writes the documents that need depth.
 - **Gemini** (rejected even though Matan subscribes): the free API tier may use your content for training and human review, and the subscription's API credits need a billing account.

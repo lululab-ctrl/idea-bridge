@@ -80,8 +80,8 @@ export interface LLM {
 export class ClaudeLLM implements LLM {
   private client: Anthropic;
 
-  constructor(private db: DB) {
-    this.client = new Anthropic({ apiKey: config.anthropicApiKey, maxRetries: 2, timeout: 110_000 });
+  constructor(private db: DB, apiKey: string) {
+    this.client = new Anthropic({ apiKey, maxRetries: 2, timeout: 110_000 });
   }
 
   private async run(opts: CallOptions, format?: ReturnType<typeof betaZodOutputFormat>) {
@@ -113,7 +113,7 @@ export class ClaudeLLM implements LLM {
       message = await stream.finalMessage();
     } catch (err) {
       if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-        throw new AIError("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY.", false);
+        throw new AIError("The Anthropic API key was rejected. Check the Claude key in Settings → System.", false);
       }
       if (err instanceof Anthropic.BadRequestError) {
         if (/credit balance/i.test(err.message)) {

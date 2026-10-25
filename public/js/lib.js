@@ -123,6 +123,7 @@ export const get = (url) => api("GET", url);
 export const post = (url, body = {}) => api("POST", url, body);
 export const patch = (url, body) => api("PATCH", url, body);
 export const del = (url) => api("DELETE", url);
+export const put = (url, body) => api("PUT", url, body);
 
 // Loads data for a view and refreshes it; `poll` keeps it fresh while visible.
 export function useData(url, { poll = 0, deps = [] } = {}) {

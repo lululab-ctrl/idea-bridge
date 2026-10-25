@@ -29,7 +29,7 @@ export function Setup({ onDone }) {
 
   return html`<div class="auth">
     <form class="card" onSubmit=${submit}>
-      <img class="logo" src="/icons/icon-192.png" alt="" />
+      <img class="logo" src="icons/icon-192.png" alt="" />
       <div class="stack tight">
         <h1>Welcome to Idea Bridge</h1>
         <p class="muted">Two quick questions and you're ready. Everything stays private to the two of you.</p>
@@ -70,7 +70,7 @@ export function Login({ onDone }) {
   }
   return html`<div class="auth">
     <form class="card" onSubmit=${submit}>
-      <img class="logo" src="/icons/icon-192.png" alt="" />
+      <img class="logo" src="icons/icon-192.png" alt="" />
       <h1>Sign in</h1>
       <label class="field">Name or email<input type="text" required value=${name} onInput=${(e) => setName(e.target.value)} autocomplete="username" /></label>
       <label class="field">Password<input type="password" required value=${pw} onInput=${(e) => setPw(e.target.value)} autocomplete="current-password" /></label>
@@ -101,7 +101,7 @@ export function SignInLink({ token, onDone }) {
   }
   return html`<div class="auth">
     <div class="card" style="text-align:center;align-items:center">
-      <img class="logo" src="/icons/icon-192.png" alt="" />
+      <img class="logo" src="icons/icon-192.png" alt="" />
       <h1>Idea Bridge</h1>
       ${error
         ? html`<div class="banner bad"><div class="grow">${error}</div></div><a class="btn" href="#/">Sign in another way</a>`

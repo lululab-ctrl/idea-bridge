@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { act, ago, api, del, download, ErrorBox, get, html, icon, Loading, Modal, patch, post, toast, useData, useRoute, when, setToken } from "../lib.js";
+import { act, ago, api, del, download, ErrorBox, get, html, icon, Loading, Modal, patch, post, put, toast, useData, useRoute, when, setToken } from "../lib.js";
 import { enablePush, isStandalone, pushSupported } from "../push.js";
 
 export function Settings({ me }) {
@@ -13,11 +13,13 @@ export function Settings({ me }) {
     ${welcome && html`<div class="card stack" style="border-color:var(--accent)">
       <h2>You're set up. Three steps to get going:</h2>
       <ol class="stack tight" style="margin:0;padding-left:1.3em">
+        <li><b>Add the AI keys</b> under “AI keys” below (Claude and Groq). Until then recordings are saved and wait.</li>
         <li><b>Put the app on ${him?.name ?? "his"} phone:</b> under People, tap “Sign-in link” next to ${him?.name ?? "his name"} and let him scan the QR code (or he signs in with his name and password). Then he taps Share → Add to Home Screen. He only sees the record button and his own ideas.</li>
         <li><b>Write your goals</b> below, so the AI can judge which ideas fit what you're building.</li>
         <li><b>Add the app to your own phone</b> and turn on notifications on this page.</li>
       </ol>
     </div>`}
+    <${Keys} />
     <${People} me=${me} users=${users} />
     <${Goals} />
     <${Teach} />
@@ -168,6 +170,61 @@ function Notifications({ me, vapid }) {
     ${!pushSupported() && !isStandalone() && /iPhone|iPad/.test(navigator.userAgent) && html`<div class="banner info"><div class="grow small">On iPhone, notifications work once Idea Bridge is on your Home Screen: tap Share → Add to Home Screen, open it from there, then come back here.</div></div>`}
     <label class="check"><input type="checkbox" checked=${!!me.notify_push} onChange=${(e) => act(() => patch(`/api/users/${me.id}`, { notify_push: e.target.checked }), "Saved")} /><span>Send me push notifications</span></label>
     <label class="check"><input type="checkbox" checked=${!!me.notify_email} onChange=${(e) => act(() => patch(`/api/users/${me.id}`, { notify_email: e.target.checked }), "Saved")} /><span>Email me the digest and reminders (needs an email address and email set up on the server)</span></label>
+  </div>`;
+}
+
+const KEY_INFO = [
+  {
+    name: "anthropic",
+    title: "Claude (understanding)",
+    help: html`Made by the Owner of your Claude Team plan: claim the monthly API credits on claude.ai (Settings → Organization → Billing), then create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com → API keys</a>.`,
+    placeholder: "sk-ant-…",
+  },
+  {
+    name: "groq",
+    title: "Groq (transcription, free)",
+    help: html`Sign in at <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com → API Keys</a> (free, no card) and create a key.`,
+    placeholder: "gsk_…",
+  },
+  {
+    name: "resend",
+    title: "Resend (email digests, optional)",
+    help: html`Only for email. Push notifications work without it. Free key at <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com</a>.`,
+    placeholder: "re_…",
+  },
+];
+
+function Keys() {
+  const { data, error, reload } = useData("/api/keys");
+  const [values, setValues] = useState({});
+  const [busy, setBusy] = useState(null);
+  if (!data) return error ? html`<${ErrorBox} error=${error} retry=${reload} />` : null;
+  const save = async (name, value) => {
+    setBusy(name);
+    const ok = await act(() => put(`/api/keys/${name}`, { value }), value ? "Key checked and saved" : "Key removed");
+    setBusy(null);
+    if (ok) {
+      setValues({ ...values, [name]: "" });
+      reload();
+    }
+  };
+  return html`<div class="card stack" id="keys">
+    <h2>AI keys</h2>
+    <p class="small muted">Keys are checked with the service, then stored on the server only. They are never shown again, not even to you.</p>
+    ${KEY_INFO.map((k) => {
+      const st = data[k.name];
+      return html`<div class="stack tight" key=${k.name}>
+        <div class="row between"><b>${k.title}</b>${st.set ? html`<span class="chip st st-approved">Added ${st.hint}</span>` : html`<span class="chip st st-needs_clarification">Not added</span>`}</div>
+        <div class="tiny muted">${k.help}</div>
+        ${st.source === "secret"
+          ? html`<div class="tiny muted">Set on the server by the deploy.</div>`
+          : html`<div class="row nowrap">
+              <input class="grow" type="password" autocomplete="off" placeholder=${st.set ? "Paste a new key to replace it" : k.placeholder} value=${values[k.name] ?? ""} onInput=${(e) => setValues({ ...values, [k.name]: e.target.value })} />
+              <button class="btn primary" disabled=${busy === k.name || !(values[k.name] ?? "").trim()} onClick=${() => save(k.name, values[k.name].trim())}>${busy === k.name ? "Checking…" : "Save"}</button>
+              ${st.set && html`<button class="btn" disabled=${busy === k.name} onClick=${() => confirm("Remove this key? Work that needs it will wait until a new key is added.") && save(k.name, null)}>Remove</button>`}
+            </div>`}
+      </div>`;
+    })}
   </div>`;
 }
 

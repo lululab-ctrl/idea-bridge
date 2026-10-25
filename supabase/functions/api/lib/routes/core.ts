@@ -1,6 +1,6 @@
 import { zipSync, strToU8 } from "fflate";
 import QRCode from "qrcode";
-import { aiStatus } from "../ai/index.ts";
+import { aiStatus, syncAI } from "../ai/index.ts";
 import { budgetStatus } from "../ai/llm.ts";
 import { extForMime } from "../ai/speech.ts";
 import type { App } from "../app.ts";
@@ -21,6 +21,7 @@ import { config } from "../config.ts";
 import { getSetting, logActivity, safeJson, setSetting } from "../db.ts";
 import { HttpError, idParam, isAdmin, type Router, requireUser, slug, str } from "../http.ts";
 import { emailConfigured, initPush, notifyRole } from "../notify.ts";
+import { checkKey, type KeyName, keySummary, saveKey } from "../keys.ts";
 import { storage } from "../storage.ts";
 import { deleteRecording, purgeRecording, purgeTrashItem, restoreFromTrash, restoreRecording } from "../trash.ts";
 import { ideaMarkdown } from "./ideas.ts";
@@ -406,6 +407,25 @@ export function coreRoutes(r: Router, app: App) {
        WHERE q.status = 'asked' ORDER BY q.asked_at`,
     ), { contributor: true });
 
+  // ---------------------------------------------------------------- service keys
+  r.get("/api/keys", async (c) => keySummary(c.db));
+
+  r.put("/api/keys/:name", async (c) => {
+    const name = c.params.name as KeyName;
+    if (!["anthropic", "groq", "resend"].includes(name)) throw new HttpError(404, "Unknown key.");
+    const value = str((await c.body<{ value?: string }>()).value, 400)?.trim() || null;
+    if (value) {
+      const problem = await checkKey(name, value);
+      if (problem) throw new HttpError(400, problem);
+    }
+    await saveKey(c.db, name, value);
+    syncAI(app.ai, c.db);
+    await logActivity(c.db, requireUser(c).id, value ? `key_set:${name}` : `key_removed:${name}`);
+    // Anything that was waiting for this key can run now.
+    if (value) await c.db.run("UPDATE jobs SET run_at = now_text() WHERE status = 'pending' AND run_at > now_text() AND last_error IS NOT NULL");
+    return keySummary(c.db);
+  });
+
   // ---------------------------------------------------------------- settings
   r.get("/api/settings", async (c) => ({
     north_star: await getSetting(c.db, "north_star", ""),
@@ -527,7 +547,7 @@ export function coreRoutes(r: Router, app: App) {
     const data: Record<string, unknown[]> = {};
     for (const t of tables) {
       const rows = await c.db.all<Record<string, unknown>>(`SELECT * FROM ${t}`);
-      data[t] = t === "users" ? rows.map(({ password_hash: _p, ...u }) => u) : t === "settings" ? rows.filter((s) => !/^(vapid|worker_secret|login_fail)/.test(String(s.key))) : rows;
+      data[t] = t === "users" ? rows.map(({ password_hash: _p, ...u }) => u) : t === "settings" ? rows.filter((s) => !/^(vapid|worker_secret|worker_url|api_keys|login_fail|qterms)/.test(String(s.key))) : rows;
     }
     data.recordings = await c.db.all("SELECT id, user_id, kind, captured_at, duration_sec, transcript, summary, language, status, deleted_at FROM recordings");
     files["data/idea-bridge.json"] = strToU8(JSON.stringify(data, null, 1));

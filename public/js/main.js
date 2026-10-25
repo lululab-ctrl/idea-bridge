@@ -33,7 +33,7 @@ function Shell({ me, route, children }) {
   const on = (p) => (section === p || (p === "ideas" && section === "recordings") ? "on" : "");
   return html`<div class="shell">
     <aside class="sidebar">
-      <div class="brandmark"><img src="/icons/icon-192.png" alt="" />Idea Bridge</div>
+      <div class="brandmark"><img src="icons/icon-192.png" alt="" />Idea Bridge</div>
       <nav class="nav">
         ${NAV.map(
           (n, i) => html`${i === 6 && html`<div class="nav-sep"></div>`}
@@ -175,7 +175,7 @@ function App() {
 render(html`<${App} />`, document.getElementById("app"));
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.register("sw.js").catch(() => {});
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data?.type === "navigate" && e.data.url) location.hash = e.data.url.replace(/^.*#/, "#");
   });

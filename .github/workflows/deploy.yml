@@ -1,14 +1,19 @@
-# Deploys the database changes and the API to Supabase (free plan) on every
-# push to main. The web app is built by Cloudflare Pages itself (see README).
-name: Deploy API
+# On every push to main: test, publish the web app to GitHub Pages, and deploy
+# the database changes and the API to Supabase (free plan).
+# The only secret needed is SUPABASE_ACCESS_TOKEN. The AI keys are added in the
+# app (Settings → AI keys).
+name: Deploy
 
 on:
   push:
     branches: [main]
-    paths: ["supabase/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
 
 concurrency: deploy
+
+env:
+  PROJECT_REF: mhfiboimwscurahprugu
+  APP_URL: https://lululab-ctrl.github.io/idea-bridge
 
 jobs:
   test:
@@ -31,45 +36,57 @@ jobs:
           deno task check
           deno task test
 
-  deploy:
+  web:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build
+        run: |
+          npm ci
+          IDEA_BRIDGE_API_URL="https://$PROJECT_REF.supabase.co/functions/v1" npm run build:web
+      - name: Publish to the gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
+          commit_message: Publish web app
+
+  api:
     needs: test
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: mhfiboimwscurahprugu
     steps:
+      - name: Check for the Supabase token
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: |
+          echo "::error::Add the repository secret SUPABASE_ACCESS_TOKEN (see README, step 1)."
+          exit 1
       - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Apply database changes
+        run: deno run -A --node-modules-dir=none scripts/ops.ts migrate
+      - name: Set server settings
+        run: deno run -A --node-modules-dir=none scripts/ops.ts secrets "APP_URL=$APP_URL"
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Link the project
-        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
-      - name: Apply database migrations
-        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
-      - name: Set server secrets
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
-          APP_URL: ${{ secrets.APP_URL }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          MAIL_FROM: ${{ secrets.MAIL_FROM }}
-          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      - name: Deploy the API
+        run: supabase functions deploy api --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
+      - name: Check the API is up (this also starts the background worker)
         run: |
-          set -e
-          args=()
-          for name in ANTHROPIC_API_KEY GROQ_API_KEY WORKER_SECRET APP_URL RESEND_API_KEY MAIL_FROM VAPID_SUBJECT; do
-            value="${!name}"
-            if [ -n "$value" ]; then args+=("$name=$value"); fi
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "https://$PROJECT_REF.supabase.co/functions/v1/api/health"; then exit 0; fi
+            sleep 10
           done
-          for required in WORKER_SECRET APP_URL; do
-            if [ -z "${!required}" ]; then echo "::error::Missing GitHub secret $required"; exit 1; fi
-          done
-          supabase secrets set --project-ref "$PROJECT_REF" "${args[@]}"
-      - name: Deploy the API function
-        run: supabase functions deploy api --project-ref "$PROJECT_REF" --no-verify-jwt
-      - name: Wake the API (registers the background worker)
-        run: |
-          sleep 5
-          curl -fsS "https://$PROJECT_REF.supabase.co/functions/v1/api/health"
+          exit 1

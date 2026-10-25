@@ -46,7 +46,7 @@ export function extForMime(mime: string): string {
 // Passing a URL means the audio never has to pass through this function.
 export class GroqTranscriber implements Transcriber {
   name = "groq";
-  constructor(private db: DB) {}
+  constructor(private db: DB, private apiKey: string) {}
 
   async transcribe(url: string, _filename: string, hints: string[]): Promise<Transcript> {
     const form = new FormData();
@@ -57,7 +57,7 @@ export class GroqTranscriber implements Transcriber {
     if (hints.length) form.append("prompt", `Names and terms: ${hints.slice(0, 30).join(", ")}.`.slice(0, 800));
     const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${config.groqApiKey}` },
+      headers: { Authorization: `Bearer ${this.apiKey}` },
       body: form,
     }).catch((e) => {
       throw new AIError(`Could not reach Groq: ${e.message}`, true);
@@ -66,7 +66,7 @@ export class GroqTranscriber implements Transcriber {
       const wait = Number(res.headers.get("retry-after")) || 600;
       throw new AIError("The free transcription limit was reached for now. Will continue automatically.", true, Math.min(wait + 30, 6 * 3600));
     }
-    if (res.status === 401 || res.status === 403) throw new AIError("Groq rejected the API key. Check GROQ_API_KEY.", false);
+    if (res.status === 401 || res.status === 403) throw new AIError("Groq rejected the API key. Check the Groq key in Settings → System.", false);
     if (!res.ok) {
       const body = (await res.text()).slice(0, 300);
       throw new AIError(`Transcription failed (${res.status}): ${body}`, res.status >= 500);

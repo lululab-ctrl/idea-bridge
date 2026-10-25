@@ -93,7 +93,7 @@ export class Pipeline {
     await db.run("UPDATE recordings SET error = NULL WHERE id = ?", id);
     if (rec.transcript === null) {
       if (!rec.audio_path) throw new AIError("The audio file is missing.", false);
-      if (!this.ai.transcriber) throw new AIError("Transcription is not set up yet. Add GROQ_API_KEY to the Supabase function secrets.", false);
+      if (!this.ai.transcriber) throw new AIError("Transcription is not set up yet. The admin can add the Groq key in Settings → System.", true, 3600);
       await db.run("UPDATE recordings SET status = 'transcribing' WHERE id = ?", id);
       const url = await storage().signedUrl("audio", rec.audio_path, 3600);
       const t = await this.ai.transcriber.transcribe(url, `recording.${extForMime(rec.mime ?? "audio/webm")}`, await this.hints());

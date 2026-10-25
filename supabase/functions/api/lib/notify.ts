@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { config } from "./config.ts";
 import type { DB } from "./db.ts";
 import { getSetting, setSetting } from "./db.ts";
+import { keys } from "./keys.ts";
 
 // Notifications are deliberately sparse: the admin works through the review
 // queue in batches, so only things that need a person now are pushed.
@@ -52,11 +53,11 @@ export async function notifyUser(db: DB, userId: number, note: Note, opts: { pus
       }
     }
   }
-  if (opts.email && config.resendApiKey && user.email && user.notify_email) {
+  if (opts.email && keys().resend && user.email && user.notify_email) {
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
-        headers: { Authorization: `Bearer ${config.resendApiKey}`, "content-type": "application/json" },
+        headers: { Authorization: `Bearer ${keys().resend}`, "content-type": "application/json" },
         body: JSON.stringify({
           from: config.mailFrom,
           to: [user.email],
@@ -77,5 +78,5 @@ export async function notifyRole(db: DB, role: "organizer" | "visionary", note: 
 }
 
 export function emailConfigured(): boolean {
-  return !!config.resendApiKey;
+  return !!keys().resend;
 }

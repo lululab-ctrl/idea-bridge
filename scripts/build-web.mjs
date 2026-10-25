@@ -31,4 +31,6 @@ writeFileSync(
   join(out, "_headers"),
   ["/config.js", "  Cache-Control: no-cache", "/sw.js", "  Cache-Control: no-cache", "/*", "  X-Content-Type-Options: nosniff", "  Referrer-Policy: same-origin", ""].join("\n"),
 );
+// GitHub Pages: serve files as they are (no Jekyll processing).
+writeFileSync(join(out, ".nojekyll"), "");
 console.log(`Built dist/ (API: ${api || "same origin"})`);

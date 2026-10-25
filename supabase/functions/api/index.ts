@@ -1,5 +1,6 @@
 // Idea Bridge API: one Supabase Edge Function that serves every /api route and
 // runs the background worker.
+import { syncAI } from "./lib/ai/index.ts";
 import { AIError } from "./lib/ai/llm.ts";
 import { type App, createApp } from "./lib/app.ts";
 import { userFromRequest } from "./lib/auth.ts";
@@ -9,6 +10,7 @@ import { type Ctx, HttpError, isAdmin, json, Router } from "./lib/http.ts";
 import { coreRoutes } from "./lib/routes/core.ts";
 import { ideaRoutes } from "./lib/routes/ideas.ts";
 import { workRoutes } from "./lib/routes/work.ts";
+import { loadKeys, workerSecret } from "./lib/keys.ts";
 import { localStorageImpl, storage } from "./lib/storage.ts";
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -36,6 +38,8 @@ function background(p: Promise<unknown>) {
 let workerRegistered = false;
 let lastKick = 0;
 async function runWorker(app: App, budgetMs = 100_000) {
+  await loadKeys(app.db);
+  syncAI(app.ai, app.db);
   try {
     await app.periodic.check();
   } catch (err) {
@@ -56,15 +60,24 @@ function kick(app: App) {
 }
 
 async function registerWorker(db: DB) {
-  if (workerRegistered || !config.workerSecret || config.storageMode === "local") return;
+  if (workerRegistered || config.storageMode === "local") return;
   workerRegistered = true;
   await setSetting(db, "worker_url", `${config.supabaseUrl}/functions/v1/api/_worker`);
-  await setSetting(db, "worker_secret", config.workerSecret);
+  await setSetting(db, "worker_secret", await workerSecret(db));
 }
+
+// APP_URL may include a path (e.g. GitHub Pages); browsers send only the origin.
+const appOrigin = (() => {
+  try {
+    return new URL(config.appUrl).origin;
+  } catch {
+    return config.appUrl;
+  }
+})();
 
 function cors(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") ?? "";
-  const allowed = origin === config.appUrl || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const allowed = origin === appOrigin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
   return allowed
     ? {
         "access-control-allow-origin": origin,
@@ -95,7 +108,7 @@ export async function handle(req: Request): Promise<Response> {
     await registerWorker(db);
 
     if (path === "/api/_worker" && req.method === "POST") {
-      if (!config.workerSecret || req.headers.get("x-worker-secret") !== config.workerSecret) throw new HttpError(403, "Forbidden.");
+      if (req.headers.get("x-worker-secret") !== (await workerSecret(db))) throw new HttpError(403, "Forbidden.");
       const run = runWorker(app);
       if (typeof EdgeRuntime !== "undefined") {
         background(run);
@@ -118,6 +131,8 @@ export async function handle(req: Request): Promise<Response> {
       return withCors(data ? new Response(data as Uint8Array<ArrayBuffer>) : json({ error: "Not found" }, 404));
     }
 
+    await loadKeys(db);
+    syncAI(app.ai, db);
     const m = router.match(req.method, path);
     if (!m) throw new HttpError(404, "Not found.");
     const user = await userFromRequest(db, req);

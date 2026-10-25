@@ -245,6 +245,8 @@ Deno.test({
         ["GET", "/api/trash"],
         ["POST", "/api/ask", { question: "x" }],
         ["GET", "/api/system"],
+        ["GET", "/api/keys"],
+        ["PUT", "/api/keys/groq", { value: "gsk_x" }],
       ] as [string, string, unknown?][]) {
         await call(m, u, b, him, 403);
       }
@@ -299,6 +301,21 @@ Deno.test({
       const sys = await call("GET", "/api/system");
       assertEquals(sys.budget.exhausted, true);
       await call("PUT", "/api/settings", { ai_budget_usd: 18 });
+    });
+
+    await t.step("AI keys are saved by the admin, never shown or exported", async () => {
+      let k = await call("PUT", "/api/keys/groq", { value: "gsk_secret_value_9876" });
+      assertEquals(k.groq, { set: true, source: "settings", hint: "…9876" });
+      assertEquals(JSON.stringify(await call("GET", "/api/keys")).includes("secret_value"), false);
+      await call("PUT", "/api/keys/nope", { value: "x" }, admin, 404);
+      const zip = await fetch(`${BASE}/api/export`, { headers: { authorization: `Bearer ${admin}` } });
+      const { unzipSync, strFromU8 } = await import("fflate");
+      const files = unzipSync(new Uint8Array(await zip.arrayBuffer()));
+      const all = Object.values(files).map((f) => strFromU8(f)).join("\n");
+      assertEquals(all.includes("gsk_secret_value_9876"), false);
+      assertEquals(all.includes("test-secret"), false);
+      k = await call("PUT", "/api/keys/groq", { value: "" });
+      assertEquals(k.groq.set, false);
     });
 
     await t.step("cross-site requests are only allowed from the app", async () => {
